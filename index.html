@@ -1,1755 +1,1284 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>6U Soccer Sub & Sideline Timer</title>
-  <!-- Tailwind CSS -->
+  <title>Soccer Sub, Position & Stats Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Font Awesome Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-  <!-- Google Fonts: Inter & JetBrains Mono for Scoreboard Timer -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet">
-
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace'],
-          },
-          keyframes: {
-            pulseFast: {
-              '0%, 100%': { opacity: '1', transform: 'scale(1)' },
-              '50%': { opacity: '0.82', transform: 'scale(0.99)' },
-            }
-          },
-          animation: {
-            pulseFast: 'pulseFast 1.2s ease-in-out infinite',
-          }
-        }
-      }
-    }
-  </script>
-
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap');
     body {
-      font-family: 'Inter', sans-serif;
-      background-color: #f1f5f9;
-      color: #0f172a;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       -webkit-tap-highlight-color: transparent;
+      background-color: #0f172a;
+      color: #f8fafc;
     }
-    .scoreboard-digits {
-      font-family: 'JetBrains Mono', monospace;
-      font-variant-numeric: tabular-nums;
-    }
-    /* Custom scrollbar for sleek mobile feel */
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #f1f5f9;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 9999px;
-    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .pos-FWD { background: rgba(239, 68, 68, 0.18); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); }
+    .pos-MID { background: rgba(59, 130, 246, 0.18); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); }
+    .pos-DEF { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); }
+    .pos-GK  { background: rgba(245, 158, 11, 0.22); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.5); }
+    .pos-BENCH { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.35); }
   </style>
 </head>
-<body class="min-h-screen flex flex-col justify-between pb-8">
+<body class="min-h-screen pb-24 selection:bg-emerald-500 selection:text-white">
 
-  <!-- TOP HEADER BAR -->
-  <header class="bg-emerald-900 text-white shadow-md sticky top-0 z-30 border-b border-emerald-800">
-    <div class="max-w-3xl mx-auto px-3.5 py-2.5 flex items-center justify-between gap-2">
-      <div class="flex items-center gap-2.5">
-        <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shadow-inner">
-          <i class="fa-solid fa-futbol text-lg"></i>
-        </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="font-extrabold text-base sm:text-lg tracking-tight leading-none">6U Soccer Sub Manager</h1>
-            <span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-700 text-emerald-100 border border-emerald-600">5v5</span>
+  <!-- Top Header -->
+  <header class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-3">
+    <div class="max-w-2xl mx-auto flex flex-col gap-2.5">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-lg">
+            ⚽
           </div>
-          <p class="text-[11px] text-emerald-200/90 font-medium mt-0.5">8-Min Quarters • 4-Min Sub Shifts</p>
+          <div>
+            <h1 id="headerTeamName" class="font-extrabold text-base leading-tight tracking-tight text-white">Soccer Sideline Manager</h1>
+            <div class="flex items-center gap-2 text-xs text-slate-400">
+              <span class="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Auto-Saved
+              </span>
+              <span>•</span>
+              <span id="formatSummaryLabel">5v5 (2-1-2) • 8m Qtrs</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5">
+          <button onclick="togglePositionMode()" id="posToggleBtn"
+            class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1">
+            <span>📍 Pos: ON</span>
+          </button>
+          <button onclick="toggleDrawer('settingsDrawer')"
+            class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold">
+            ⚙️ Roster / Setup
+          </button>
         </div>
       </div>
 
-      <!-- Cloud Sync Status Pill -->
-      <div class="flex items-center gap-2">
-        <div id="syncStatusBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-950/70 text-emerald-200 border border-emerald-700/70">
-          <span id="syncDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-          <span id="syncText">Syncing...</span>
-        </div>
-        <button id="openTextModalBtnTop" onclick="scrollToSection('smsSection')" class="bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-emerald-950 font-bold text-xs px-3 py-1.5 rounded-xl shadow-sm transition flex items-center gap-1.5">
-          <i class="fa-solid fa-comment-sms"></i>
-          <span>Text</span>
+      <!-- Primary Navigation Tabs -->
+      <div class="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+        <button onclick="switchMainTab('game')" id="tabBtnGame"
+          class="py-1.5 rounded-lg text-xs font-bold transition">
+          🏟️ Live Game & Subs
+        </button>
+        <button onclick="switchMainTab('stats')" id="tabBtnStats"
+          class="py-1.5 rounded-lg text-xs font-bold transition">
+          📊 Stats & Game History
         </button>
       </div>
     </div>
   </header>
 
-  <!-- MAIN CONTAINER -->
-  <main class="max-w-3xl w-full mx-auto px-3 sm:px-4 pt-3 space-y-4 flex-1">
+  <main class="max-w-2xl mx-auto px-3 pt-3 space-y-4">
 
-    <!-- 1. SIDELINE SCOREBOARD TIMER & SUB ALERT CARD -->
-    <section class="bg-slate-900 text-white rounded-2xl shadow-lg border border-slate-800 overflow-hidden">
-      <!-- Top Bar of Scoreboard -->
-      <div class="bg-slate-950/80 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
-        <!-- Quarter Selector Pills -->
-        <div class="flex items-center gap-1" role="group" aria-label="Quarter Selector">
-          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1.5">Qtr:</span>
-          <button onclick="selectQuarter(1)" id="qtrBtn1" class="qtr-pill px-2.5 py-1 rounded-lg text-xs font-extrabold transition">Q1</button>
-          <button onclick="selectQuarter(2)" id="qtrBtn2" class="qtr-pill px-2.5 py-1 rounded-lg text-xs font-extrabold transition">Q2</button>
-          <button onclick="selectQuarter(3)" id="qtrBtn3" class="qtr-pill px-2.5 py-1 rounded-lg text-xs font-extrabold transition">Q3</button>
-          <button onclick="selectQuarter(4)" id="qtrBtn4" class="qtr-pill px-2.5 py-1 rounded-lg text-xs font-extrabold transition">Q4</button>
-        </div>
-
-        <!-- Audio & Quick Sync Controls -->
-        <div class="flex items-center gap-1.5">
-          <button onclick="testWhistleOrToggleMute()" id="muteBtn" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1.5" title="Toggle Sub Alert Whistle Sound">
-            <i id="muteIcon" class="fa-solid fa-volume-high text-emerald-400"></i>
-            <span id="muteLabel">Sound On</span>
-          </button>
-          <button onclick="jumpToMidQuarter()" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition" title="Sync clock to 4:00 mid-quarter sub">
-            Sync 4:00
-          </button>
-          <button onclick="resetQuarterTimer()" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Reset Quarter to 8:00">
-            <i class="fa-solid fa-rotate-left"></i>
-          </button>
-        </div>
-      </div>
-
-      <!-- Main Timer Display & Controls -->
-      <div class="p-4">
-        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <!-- Clock & Active Shift Badge -->
-          <div class="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-start">
-            <div>
-              <div class="flex items-center gap-2">
-                <span id="activeShiftLabel" class="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                  Q1 • 1st 4m Shift
-                </span>
-              </div>
-              <div id="timerDisplay" class="scoreboard-digits text-5xl sm:text-6xl font-extrabold tracking-tight text-white mt-1 leading-none">
-                08:00
-              </div>
-            </div>
-
-            <!-- Micro Adjustments (-15s / +15s) -->
-            <div class="flex flex-col gap-1.5">
-              <button onclick="adjustTimerSeconds(15)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-mono text-xs font-bold border border-slate-700 transition">
-                +15s
-              </button>
-              <button onclick="adjustTimerSeconds(-15)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-mono text-xs font-bold border border-slate-700 transition">
-                -15s
-              </button>
-            </div>
-          </div>
-
-          <!-- Primary Start/Pause & Next Shift Buttons -->
-          <div class="flex items-center gap-2.5 w-full sm:w-auto">
-            <button id="startPauseBtn" onclick="toggleTimer()" class="flex-1 sm:flex-initial sm:min-w-[140px] py-3.5 px-5 rounded-xl font-extrabold text-sm uppercase tracking-wider shadow-md transition active:scale-95 flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950">
-              <i id="startPauseIcon" class="fa-solid fa-play"></i>
-              <span id="startPauseText">Start Qtr</span>
-            </button>
-            <button onclick="lockCurrentShiftAndAdvance()" class="py-3.5 px-3.5 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 transition flex items-center justify-center gap-1.5" title="Lock active shift & advance">
-              <i class="fa-solid fa-check-double text-emerald-400"></i>
-              <span>Lock Shift</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Dual 4-Minute Shift Progress Bar -->
-        <div class="mt-4">
-          <div class="flex justify-between text-[11px] font-bold text-slate-400 mb-1">
-            <span id="progLabelStart">8:00 (Start)</span>
-            <span class="text-amber-400 flex items-center gap-1"><i class="fa-solid fa-arrows-rotate"></i> 4:00 Mid-Qtr Sub</span>
-            <span id="progLabelEnd">0:00 (End Qtr)</span>
-          </div>
-          <div class="w-full h-3 bg-slate-800 rounded-full overflow-hidden flex p-0.5 gap-1 border border-slate-700">
-            <!-- 1st 4m bar (8:00 down to 4:00) -->
-            <div class="w-1/2 h-full bg-slate-900 rounded-l-full overflow-hidden">
-              <div id="progressBarFirstHalf" class="h-full bg-emerald-500 transition-all duration-300" style="width: 0%"></div>
-            </div>
-            <!-- 2nd 4m bar (4:00 down to 0:00) -->
-            <div class="w-1/2 h-full bg-slate-900 rounded-r-full overflow-hidden">
-              <div id="progressBarSecondHalf" class="h-full bg-amber-400 transition-all duration-300" style="width: 0%"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Live Current Bench & Upcoming Sub Strip -->
-        <div class="mt-3.5 pt-3 border-t border-slate-800/90 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <div class="bg-slate-800/70 rounded-xl px-3 py-2 border border-slate-700/70 flex items-center justify-between">
-            <div>
-              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Sitting Out Now</span>
-              <div id="liveBenchNowText" class="text-sm font-extrabold text-amber-300 mt-0.5">Cora, Ruby</div>
-            </div>
-            <button onclick="openShiftEditor(getActiveShiftIndex())" class="text-xs font-bold text-slate-300 hover:text-white bg-slate-700/80 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition">
-              <i class="fa-solid fa-pen-to-square mr-1"></i>Change
-            </button>
-          </div>
-
-          <div class="bg-slate-800/70 rounded-xl px-3 py-2 border border-slate-700/70 flex items-center justify-between">
-            <div>
-              <span id="nextSubHeaderLabel" class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Next Sub (at 4:00)</span>
-              <div id="liveBenchNextText" class="text-sm font-extrabold text-emerald-300 mt-0.5">Blyss, Ellie</div>
-            </div>
-            <span id="nextSubInText" class="text-[11px] font-semibold text-slate-300 bg-slate-900/90 px-2 py-1 rounded-lg border border-slate-700">
-              In: Cora, Ruby
-            </span>
-          </div>
-        </div>
-
-        <!-- HIGH-VISIBILITY FLASHING SUB ALERT BANNER (Hidden until 4:00 or 0:00 or triggered) -->
-        <div id="subAlertBanner" class="hidden mt-3.5 bg-amber-400 text-slate-950 rounded-xl p-3.5 shadow-lg border-2 border-amber-200 animate-pulseFast">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <span class="bg-slate-950 text-amber-300 text-xs font-black uppercase px-2 py-0.5 rounded-md tracking-wider flex items-center gap-1">
-                  <i class="fa-solid fa-bell"></i>
-                  <span id="alertBannerTitle">MID-QUARTER SUB TIME (4:00)</span>
-                </span>
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                <div class="bg-emerald-950/15 rounded-lg px-2.5 py-1.5 border border-slate-900/15">
-                  <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-800 block">COMING IN (To Field):</span>
-                  <span id="alertComingInNames" class="text-sm font-black text-slate-950">Cora, Ruby</span>
-                </div>
-                <div class="bg-amber-950/15 rounded-lg px-2.5 py-1.5 border border-slate-900/15">
-                  <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-800 block">GOING OUT (To Bench):</span>
-                  <span id="alertGoingOutNames" class="text-sm font-black text-slate-950">Blyss, Ellie</span>
-                </div>
-              </div>
-            </div>
-            <div class="flex sm:flex-col gap-2 shrink-0">
-              <button id="alertConfirmBtn" onclick="confirmSubAlertAction()" class="flex-1 bg-slate-950 hover:bg-slate-800 text-white font-extrabold text-xs px-3.5 py-2.5 rounded-xl shadow transition flex items-center justify-center gap-1.5">
-                <i class="fa-solid fa-lock text-emerald-400"></i>
-                <span id="alertConfirmBtnText">Confirm Sub & Lock</span>
-              </button>
-              <button onclick="dismissSubAlert()" class="bg-amber-500/60 hover:bg-amber-500 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-xl transition">
-                Dismiss
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 2. ATTENDANCE & ROSTER BAR (SELECT / DESELECT PLAYERS ON THE FLY) -->
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <!-- =================================================================== -->
+    <!-- INITIAL BLANK ROSTER ONBOARDING PROMPT (Shown when roster is empty) -->
+    <!-- =================================================================== -->
+    <section id="onboardingCard" class="hidden bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/40 border-2 border-emerald-500/40 rounded-2xl p-5 space-y-4 shadow-2xl">
+      <div class="flex items-start justify-between gap-3">
         <div>
-          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
-            <i class="fa-solid fa-users text-emerald-600"></i>
-            <span>Today's Attendance</span>
-            <span id="presentCountBadge" class="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">7/7 Present</span>
-          </h2>
-          <p class="text-xs text-slate-500 mt-0.5">Tap a player to mark Present/Absent. Unlocked shifts automatically rebalance.</p>
-        </div>
-
-        <div class="flex items-center gap-1.5">
-          <button onclick="setAllAttendance(true)" class="text-xs font-bold px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
-            Select All
-          </button>
-          <button onclick="toggleRosterManager()" class="text-xs font-bold px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition flex items-center gap-1">
-            <i class="fa-solid fa-sliders"></i>
-            <span>Roster & Prior Shifts</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Player Attendance Chips -->
-      <div id="attendanceChipsContainer" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <!-- Rendered dynamically by JS -->
-      </div>
-
-      <!-- Game Settings Strip (Bench Info & Balance Mode Toggle) -->
-      <div class="mt-3.5 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div class="flex items-center gap-3 flex-wrap">
-          <div class="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-lg font-semibold text-slate-700">
-            <span>On Field:</span>
-            <button onclick="changeFieldSize(-1)" class="w-5 h-5 rounded bg-white shadow-sm font-bold text-slate-700 hover:bg-slate-50">-</button>
-            <span id="fieldSizeDisplay" class="font-extrabold text-emerald-700 px-1">5</span>
-            <button onclick="changeFieldSize(1)" class="w-5 h-5 rounded bg-white shadow-sm font-bold text-slate-700 hover:bg-slate-50">+</button>
-          </div>
-          <div id="benchPerShiftInfo" class="font-semibold text-slate-600">
-            Sitting per 4m shift: <strong class="text-slate-900">2 girls</strong>
-          </div>
-        </div>
-
-        <!-- Balance Mode Switch -->
-        <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-          <button id="modeSeasonBtn" onclick="setBalanceMode('season')" class="px-2.5 py-1 rounded-lg text-xs font-bold transition">
-            Season Balance
-          </button>
-          <button id="modeTodayBtn" onclick="setBalanceMode('today')" class="px-2.5 py-1 rounded-lg text-xs font-bold transition">
-            Today Only (Reset)
-          </button>
-        </div>
-      </div>
-
-      <!-- Expandable Roster & Season History Editor Drawer -->
-      <div id="rosterManagerDrawer" class="hidden mt-4 pt-4 border-t border-slate-200 space-y-3">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700">Manage Roster & Prior Season Sit-Outs</h3>
-            <p class="text-[11px] text-slate-500">Adjust prior shifts sat from previous weeks or add/remove players.</p>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <button onclick="loadThreeGameHistoryPreset()" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition" title="Set prior shifts to match the last 2 weeks of games">
-              Load Past 2 Wks Preset
-            </button>
-            <button onclick="resetPriorShiftsToZero()" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
-              Zero Prior Shifts
-            </button>
-          </div>
-        </div>
-
-        <div id="rosterEditorList" class="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50">
-          <!-- Dynamically populated -->
-        </div>
-
-        <!-- Add New Player Input -->
-        <div class="flex gap-2 pt-1">
-          <input id="newPlayerNameInput" type="text" placeholder="Add player name..." class="flex-1 text-xs px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white" onkeydown="if(event.key==='Enter') addNewPlayer()" />
-          <button onclick="addNewPlayer()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition">
-            <i class="fa-solid fa-plus mr-1"></i>Add Player
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- 3. LIVE SUBSTITUTION SCHEDULE (8 SHIFTS / 4 QUARTERS WITH ON-THE-FLY OVERRIDES) -->
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <div>
-          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
-            <i class="fa-solid fa-clipboard-list text-emerald-600"></i>
-            <span>Game Substitution Plan & Live Overrides</span>
-          </h2>
-          <p class="text-xs text-slate-500 mt-0.5">
-            Tap <strong>Edit Actual</strong> if subs change on the fly, or tap <strong>Full 8m Qtr</strong> if the ref only allows quarter breaks.
+          <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+            Welcome Coach
+          </span>
+          <h2 class="text-lg font-extrabold text-white mt-1.5">Set Up Your Team Roster</h2>
+          <p class="text-xs text-slate-300 mt-0.5">
+            Enter your team name and add your players (with optional jersey numbers) to generate fair substitution and position rotations.
           </p>
         </div>
-
-        <div class="flex items-center gap-1.5">
-          <button onclick="unlockAllAndRecalculate()" class="text-xs font-bold px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1" title="Unlock all shifts and generate fresh rotation">
-            <i class="fa-solid fa-wand-magic-sparkles text-emerald-600"></i>
-            <span>Reset Locks & Auto-Fill</span>
-          </button>
-        </div>
       </div>
 
-      <!-- Quarters Grid (Q1 - Q4) -->
-      <div id="quartersScheduleContainer" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-        <!-- Dynamically rendered Q1, Q2, Q3, Q4 cards -->
-      </div>
-    </section>
-
-    <!-- 4. FAIRNESS & PLAYTIME SUMMARY TABLE -->
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
-            <i class="fa-solid fa-scale-balanced text-emerald-600"></i>
-            <span>Playtime & Sit-Out Fairness Tracker</span>
-          </h2>
-          <p class="text-xs text-slate-500 mt-0.5">Live summary of today's shifts sat (4m each), field time, and cumulative season totals.</p>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Your Team Name</label>
+          <input id="onboardTeamNameInput" type="text" placeholder="e.g., Montecito Breakers"
+            onchange="updateTeamName(this.value)"
+            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
         </div>
-
-        <button onclick="openFinishGameModal()" class="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5">
-          <i class="fa-solid fa-flag-checkered"></i>
-          <span>Finish & Save Game to Season</span>
-        </button>
-      </div>
-
-      <div class="overflow-x-auto -mx-4 px-4">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="border-b border-slate-200 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              <th class="py-2 pr-2">Player</th>
-              <th class="py-2 px-2 text-center">Today Sat</th>
-              <th class="py-2 px-2 text-center">Play Time</th>
-              <th class="py-2 px-2 text-center">Prior Wks</th>
-              <th class="py-2 pl-2 text-right">Season Total</th>
-            </tr>
-          </thead>
-          <tbody id="fairnessTableBody" class="divide-y divide-slate-100 text-xs sm:text-sm">
-            <!-- Dynamically rendered -->
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- 5. 1-TAP SMS / RCS TEXT COPY SECTION -->
-    <section id="smsSection" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div>
-          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
-            <i class="fa-solid fa-comment-dots text-emerald-600"></i>
-            <span>Copy Schedule for Texting (SMS / RCS)</span>
-          </h2>
-          <p class="text-xs text-slate-500 mt-0.5">Ready to paste directly into your group chat or sideline text thread.</p>
-        </div>
-
-        <!-- Format Switcher Tabs -->
-        <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-          <button id="fmtCompactBtn" onclick="setSmsFormat('compact')" class="px-2.5 py-1 rounded-lg text-xs font-bold transition">
-            Screenshot Style
-          </button>
-          <button id="fmtDetailedBtn" onclick="setSmsFormat('detailed')" class="px-2.5 py-1 rounded-lg text-xs font-bold transition">
-            Full Breakdown
-          </button>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Game Format</label>
+          <select id="onboardFormatSelect" onchange="handleFormationChange(this.value)"
+            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <option value="5v5_212">5v5 No GK (2 FWD, 1 MID, 2 DEF)</option>
+            <option value="5v5_32">5v5 No GK (3 FWD, 2 DEF)</option>
+            <option value="4v4_22">4v4 No GK (2 FWD, 2 DEF)</option>
+            <option value="5v5_gk">5v5 With GK (2 FWD, 2 DEF, 1 GK)</option>
+            <option value="6v6_gk">6v6 With GK (2 FWD, 1 MID, 2 DEF, 1 GK)</option>
+            <option value="7v7_231">7v7 With GK (2 FWD, 3 MID, 1 DEF, 1 GK)</option>
+            <option value="7v7_222">7v7 With GK (2 FWD, 2 MID, 2 DEF, 1 GK)</option>
+            <option value="9v9_332">9v9 With GK (2 FWD, 3 MID, 3 DEF, 1 GK)</option>
+            <option value="11v11_433">11v11 With GK (3 FWD, 3 MID, 4 DEF, 1 GK)</option>
+          </select>
         </div>
       </div>
 
-      <!-- Text Preview Box -->
-      <div class="relative">
-        <pre id="smsPreviewText" class="bg-slate-900 text-emerald-100 font-sans text-xs sm:text-sm p-4 rounded-xl overflow-x-auto whitespace-pre-wrap leading-relaxed border border-slate-800 select-all"></pre>
-        <button onclick="copyScheduleToClipboard()" id="copySmsMainBtn" class="mt-3 w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-99 text-white font-extrabold text-sm shadow-sm transition flex items-center justify-center gap-2">
-          <i class="fa-regular fa-copy"></i>
-          <span id="copySmsBtnText">Copy Schedule to Clipboard</span>
-        </button>
-      </div>
-
-      <!-- Individual Bubble Quick-Copy Pills (Matches Screenshot Message Bubbles) -->
-      <div class="mt-3 pt-3 border-t border-slate-100">
-        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
-          Or Tap Any Bubble to Copy Single Line:
-        </span>
-        <div id="smsBubblePills" class="flex flex-wrap gap-1.5">
-          <!-- Dynamically populated message bubbles -->
+      <!-- Quick Player Adder -->
+      <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-3">
+        <label class="block text-xs font-bold text-emerald-400">Add Players to Roster</label>
+        <div class="flex gap-2">
+          <input id="onboardPlayerNum" type="text" placeholder="#" maxlength="3"
+            onkeydown="if(event.key==='Enter') addPlayerFromOnboarding()"
+            class="w-16 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-center font-bold text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
+          <input id="onboardPlayerName" type="text" placeholder="Player Name (e.g., Maya)"
+            onkeydown="if(event.key==='Enter') addPlayerFromOnboarding()"
+            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
+          <button onclick="addPlayerFromOnboarding()"
+            class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shrink-0 shadow">
+            + Add
+          </button>
         </div>
       </div>
     </section>
+
+    <!-- =================================================================== -->
+    <!-- COLLAPSIBLE SETUP & ROSTER DRAWER                                   -->
+    <!-- =================================================================== -->
+    <section id="settingsDrawer" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4 shadow-xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+        <h2 class="font-bold text-sm text-white flex items-center gap-2">⚙️ Team, Format & Roster Setup</h2>
+        <button onclick="toggleDrawer('settingsDrawer')" class="text-xs text-slate-400 hover:text-white px-2 py-1">✕ Close</button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Your Team Name</label>
+          <input id="teamNameInput" type="text" placeholder="My Team"
+            onchange="updateTeamName(this.value)"
+            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Formation Preset</label>
+          <select id="formationPresetSelect" onchange="handleFormationChange(this.value)"
+            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <option value="5v5_212">5v5 No GK (2 FWD, 1 MID, 2 DEF)</option>
+            <option value="5v5_32">5v5 No GK (3 FWD, 2 DEF)</option>
+            <option value="4v4_22">4v4 No GK (2 FWD, 2 DEF)</option>
+            <option value="5v5_gk">5v5 With GK (2 FWD, 2 DEF, 1 GK)</option>
+            <option value="6v6_gk">6v6 With GK (2 FWD, 1 MID, 2 DEF, 1 GK)</option>
+            <option value="7v7_231">7v7 With GK (2 FWD, 3 MID, 1 DEF, 1 GK)</option>
+            <option value="7v7_222">7v7 With GK (2 FWD, 2 MID, 2 DEF, 1 GK)</option>
+            <option value="9v9_332">9v9 With GK (2 FWD, 3 MID, 3 DEF, 1 GK)</option>
+            <option value="11v11_433">11v11 With GK (3 FWD, 3 MID, 4 DEF, 1 GK)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Quarter Mins</label>
+          <select id="quarterMinsSelect" onchange="handleTimingChange()"
+            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white">
+            <option value="6">6 min</option>
+            <option value="8" selected>8 min</option>
+            <option value="10">10 min</option>
+            <option value="12">12 min</option>
+            <option value="15">15 min</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Shifts / Qtr</label>
+          <select id="shiftsPerQtrSelect" onchange="handleTimingChange()"
+            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white">
+            <option value="2" selected>2 (Mid-Qtr Sub)</option>
+            <option value="1">1 (Full Qtr)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Custom Slot Adjusters -->
+      <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3">
+        <div class="text-xs font-semibold text-slate-400 mb-2 flex items-center justify-between">
+          <span>Active On-Field Slots (<span id="totalFieldSlotsLabel">5</span> players on field)</span>
+          <span class="text-[11px] text-slate-500">Auto-rotates every shift</span>
+        </div>
+        <div class="grid grid-cols-4 gap-2 text-center">
+          <div class="bg-slate-900 border border-slate-800 rounded-lg p-2">
+            <div class="text-[11px] font-bold text-rose-400">⚔️ FWD</div>
+            <div class="flex items-center justify-center gap-2 mt-1">
+              <button onclick="adjustSlot('FWD', -1)" class="w-6 h-6 rounded bg-slate-800 text-xs font-bold">-</button>
+              <span id="slotCountFWD" class="mono text-sm font-bold">2</span>
+              <button onclick="adjustSlot('FWD', 1)" class="w-6 h-6 rounded bg-slate-800 text-xs font-bold">+</button>
+            </div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-lg p-2">
+            <div class="text-[11px] font-bold text-blue-400">⚡ MID</div>
+            <div class="flex items-center justify-center gap-2 mt-1">
+              <button onclick="adjustSlot('MID', -1)" class="w-6 h-6 rounded bg-slate-800 text-xs font-bold">-</button>
+              <span id="slotCountMID" class="mono text-sm font-bold">1</span>
+              <button onclick="adjustSlot('MID', 1)" class="w-6 h-6 rounded bg-slate-800 text-xs font-bold">+</button>
+            </div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-lg p-2">
+            <div class="text-[11px] font-bold text-emerald-400">🛡️ DEF</div>
+            <div class="flex items-center justify-center gap-2 mt-1">
+              <button onclick="adjustSlot('DEF', -1)" class="w-6 h-6 rounded bg-slate-800 text-xs font-bold">-</button>
+              <span id="slotCountDEF" class="mono text-sm font-bold">2</span>
+              <button onclick="adjustSlot('DEF', 1)" class="w-6 h-6 rounded bg-slate-800 text-xs font-bold">+</button>
+            </div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-lg p-2">
+            <div class="text-[11px] font-bold text-amber-400">🧤 GK</div>
+            <div class="flex items-center justify-center gap-2 mt-1">
+              <button onclick="adjustSlot('GK', -1)" class="w-6 h-6 rounded bg-slate-800 text-xs font-bold">-</button>
+              <span id="slotCountGK" class="mono text-sm font-bold">0</span>
+              <button onclick="adjustSlot('GK', 1)" class="w-6 h-6 rounded bg-slate-800 text-xs font-bold">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Roster Management with Jersey Number -->
+      <div class="space-y-2.5">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-semibold text-slate-400">Team Roster (Jersey # & Name)</label>
+          <button onclick="resetSeasonHistory()" class="text-xs text-rose-400 hover:underline">Reset Prior Counts</button>
+        </div>
+
+        <div class="flex gap-2">
+          <input id="newPlayerNumberInput" type="text" placeholder="#" maxlength="3"
+            onkeydown="if(event.key==='Enter') addPlayer()"
+            class="w-16 bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-center font-bold text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
+          <input id="newPlayerInput" type="text" placeholder="Add player name..."
+            onkeydown="if(event.key==='Enter') addPlayer()"
+            class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
+          <button onclick="addPlayer()"
+            class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shrink-0">
+            + Add
+          </button>
+        </div>
+
+        <div id="rosterHistoryList" class="space-y-1.5 max-h-64 overflow-y-auto pr-1"></div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- TAB 1: LIVE GAME, SCOREBOARD, TIMER & SUB ROTATION                  -->
+    <!-- =================================================================== -->
+    <div id="viewGame" class="space-y-4">
+
+      <!-- Live Scoreboard & Goal Tracker -->
+      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+            🏆 Live Match Scoreboard
+          </span>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-slate-400">vs</span>
+            <input id="opponentNameInput" type="text" placeholder="Opponent Name"
+              onchange="updateOpponentName(this.value)"
+              class="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs font-semibold text-white placeholder-slate-500 w-36 focus:outline-none focus:border-emerald-500" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 items-center">
+          <!-- Our Team Score Box -->
+          <div class="bg-slate-950/90 border border-emerald-500/30 rounded-2xl p-3 text-center space-y-2">
+            <div id="scoreTeamLabel" class="text-xs font-bold text-emerald-300 truncate">My Team</div>
+            <div id="ourScoreDisplay" class="mono text-4xl font-extrabold text-white">0</div>
+            <button onclick="openGoalModal()"
+              class="w-full py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-emerald-500/20 transition active:scale-95">
+              + Goal ⚽ (Log Scorer)
+            </button>
+          </div>
+
+          <!-- Opponent Score Box -->
+          <div class="bg-slate-950/90 border border-slate-800 rounded-2xl p-3 text-center space-y-2">
+            <div id="scoreOpponentLabel" class="text-xs font-bold text-slate-400 truncate">Opponent</div>
+            <div id="oppScoreDisplay" class="mono text-4xl font-extrabold text-slate-200">0</div>
+            <div class="flex items-center justify-center gap-2">
+              <button onclick="adjustOpponentScore(-1)"
+                class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs border border-slate-700">
+                -1
+              </button>
+              <button onclick="adjustOpponentScore(1)"
+                class="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 transition active:scale-95">
+                +1 Opp Goal
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Current Game Goal Log -->
+        <div id="currentGameGoalsContainer" class="hidden pt-2 border-t border-slate-800/80 space-y-1.5">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">⚽ Match Scoring Summary</div>
+          <div id="currentGameGoalsList" class="space-y-1"></div>
+        </div>
+      </section>
+
+      <!-- Built-In Sideline Timer & Whistle Alert Card -->
+      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Quarter</span>
+            <div class="flex gap-1">
+              <button onclick="setTimerQuarter(1)" id="qTab1" class="px-2.5 py-1 rounded-lg text-xs font-bold">Q1</button>
+              <button onclick="setTimerQuarter(2)" id="qTab2" class="px-2.5 py-1 rounded-lg text-xs font-bold">Q2</button>
+              <button onclick="setTimerQuarter(3)" id="qTab3" class="px-2.5 py-1 rounded-lg text-xs font-bold">Q3</button>
+              <button onclick="setTimerQuarter(4)" id="qTab4" class="px-2.5 py-1 rounded-lg text-xs font-bold">Q4</button>
+            </div>
+          </div>
+          <span id="timerShiftBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            Q1 • 1st Shift
+          </span>
+        </div>
+
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 my-2">
+          <div class="flex items-baseline gap-3">
+            <div id="timerDisplay" class="mono text-5xl font-extrabold tracking-tight text-white">08:00</div>
+            <button onclick="playWhistle(1)" class="text-xs text-slate-400 hover:text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700">
+              📣 Whistle
+            </button>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button onclick="toggleTimer()" id="timerStartBtn"
+              class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm transition shadow-lg shadow-emerald-500/20">
+              ▶ Start
+            </button>
+            <button onclick="adjustTimer(-15)" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold border border-slate-700">-15s</button>
+            <button onclick="adjustTimer(15)" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold border border-slate-700">+15s</button>
+            <button onclick="syncMidQuarter()" class="px-2.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40">
+              Sync Mid
+            </button>
+            <button onclick="resetTimer()" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-bold border border-slate-700">
+              ↺
+            </button>
+          </div>
+        </div>
+
+        <!-- Dual Progress Bar -->
+        <div class="grid grid-cols-2 gap-1.5 mt-2">
+          <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div id="progressHalf1" class="h-full bg-emerald-500 transition-all duration-300" style="width: 100%"></div>
+          </div>
+          <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div id="progressHalf2" class="h-full bg-amber-400 transition-all duration-300" style="width: 100%"></div>
+          </div>
+        </div>
+
+        <!-- Live Sub Alert Banner -->
+        <div id="subAlertBanner" class="hidden mt-3 p-3 rounded-xl bg-amber-500/15 border border-amber-400/50 text-amber-100">
+          <div class="flex items-center justify-between">
+            <span class="font-extrabold text-xs uppercase tracking-wider text-amber-300">🔔 Substitution & Position Alert</span>
+            <button onclick="document.getElementById('subAlertBanner').classList.add('hidden')" class="text-xs text-amber-300 hover:underline">Dismiss</button>
+          </div>
+          <div id="subAlertContent" class="text-xs mt-1.5 space-y-1"></div>
+        </div>
+      </section>
+
+      <!-- Roll Call / Attendance Bar -->
+      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between mb-2.5">
+          <div>
+            <h2 class="font-bold text-sm text-white">📋 Roll Call (Tap Player to Toggle Present)</h2>
+            <p id="attendanceSubtext" class="text-xs text-slate-400">0 present</p>
+          </div>
+          <div class="flex gap-1.5">
+            <button onclick="setAllAttendance(true)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700">
+              Select All
+            </button>
+            <button onclick="rotateStarterOrder()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-emerald-400 border border-slate-700">
+              🔀 Rotate Order
+            </button>
+          </div>
+        </div>
+        <div id="attendanceChips" class="flex flex-wrap gap-2"></div>
+      </section>
+
+      <!-- Quarter-by-Quarter Rotation Schedule -->
+      <section class="space-y-3">
+        <div class="flex items-center justify-between px-1">
+          <h2 class="font-bold text-sm text-white">🔄 Game Rotation & Field Positions</h2>
+          <span class="text-xs text-slate-400">Tap any shift to edit actual subs/positions</span>
+        </div>
+        <div id="scheduleGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+      </section>
+
+      <!-- Playtime & Position Fairness Matrix -->
+      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h2 class="font-bold text-sm text-white">⚖️ Playtime & Position Balance</h2>
+            <p class="text-xs text-slate-400">Counts show <span class="text-white font-semibold">Today's Game</span> (and cumulative season total in parentheses)</p>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400">
+                <th class="py-2 pr-2 font-semibold">Player</th>
+                <th class="py-2 px-2 text-center font-semibold text-slate-300">🪑 Bench</th>
+                <th class="py-2 px-2 text-center font-semibold text-rose-400 pos-col">⚔️ FWD</th>
+                <th class="py-2 px-2 text-center font-semibold text-blue-400 pos-col">⚡ MID</th>
+                <th class="py-2 px-2 text-center font-semibold text-emerald-400 pos-col">🛡️ DEF</th>
+                <th class="py-2 px-2 text-center font-semibold text-amber-400 pos-col" id="gkHeaderCell">🧤 GK</th>
+                <th class="py-2 pl-2 text-right font-semibold text-emerald-300">Play %</th>
+              </tr>
+            </thead>
+            <tbody id="balanceTableBody" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 1-Tap SMS / RCS Text Output -->
+      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="font-bold text-sm text-white">💬 Text Schedule (SMS / RCS Ready)</h2>
+            <p class="text-xs text-slate-400">Tap any bubble to copy, or copy the full schedule</p>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button onclick="setSmsStyle('compact')" id="smsBtnCompact"
+              class="px-2.5 py-1 rounded-lg text-xs font-semibold border">
+              Subs Only
+            </button>
+            <button onclick="setSmsStyle('positions')" id="smsBtnPositions"
+              class="px-2.5 py-1 rounded-lg text-xs font-semibold border">
+              Subs + Positions
+            </button>
+            <button onclick="copyAllSms()" id="copyAllBtn"
+              class="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow">
+              📋 Copy All
+            </button>
+          </div>
+        </div>
+        <div id="smsBubblesContainer" class="space-y-2 bg-slate-950/70 p-3 rounded-xl border border-slate-800"></div>
+      </section>
+
+      <!-- Complete & Archive Game Action -->
+      <section class="bg-gradient-to-r from-indigo-950/80 to-slate-900 border border-indigo-500/40 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+        <div>
+          <h3 class="font-bold text-sm text-white">🏁 Finished Today's Match?</h3>
+          <p class="text-xs text-slate-300">Save final score, goals, assists, and shift counts to your Season History & Stats.</p>
+        </div>
+        <div class="flex gap-2 w-full sm:w-auto">
+          <button onclick="clearAllLocks()"
+            class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs border border-slate-700">
+            🔓 Unlock Shifts
+          </button>
+          <button onclick="finishAndSaveGame()"
+            class="flex-1 sm:flex-initial py-2.5 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-extrabold text-xs shadow-lg">
+            ✅ Complete & Save Game
+          </button>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- TAB 2: TEAM STATS LEADERBOARD & GAME HISTORY VIEWER                 -->
+    <!-- =================================================================== -->
+    <div id="viewStats" class="hidden space-y-4">
+
+      <!-- Season Team Summary Cards -->
+      <section class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 text-center">
+          <div class="text-[11px] font-bold uppercase text-slate-400">Record (W-L-D)</div>
+          <div id="statRecord" class="mono text-2xl font-extrabold text-white mt-1">0-0-0</div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 text-center">
+          <div class="text-[11px] font-bold uppercase text-slate-400">Goals For</div>
+          <div id="statGoalsFor" class="mono text-2xl font-extrabold text-emerald-400 mt-1">0</div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 text-center">
+          <div class="text-[11px] font-bold uppercase text-slate-400">Goals Against</div>
+          <div id="statGoalsAgainst" class="mono text-2xl font-extrabold text-rose-400 mt-1">0</div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 text-center">
+          <div class="text-[11px] font-bold uppercase text-slate-400">Goal Diff</div>
+          <div id="statGoalDiff" class="mono text-2xl font-extrabold text-amber-300 mt-1">0</div>
+        </div>
+      </section>
+
+      <!-- Player Season Stats Leaderboard -->
+      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h2 class="font-bold text-sm text-white">🌟 Season Player Leaderboard</h2>
+            <p class="text-xs text-slate-400">Cumulative Goals, Assists, Points, and Shift History across saved games</p>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400">
+                <th class="py-2 pr-2 font-semibold">Player</th>
+                <th class="py-2 px-2 text-center font-semibold">GP</th>
+                <th class="py-2 px-2 text-center font-semibold text-emerald-400">⚽ G</th>
+                <th class="py-2 px-2 text-center font-semibold text-blue-400">👟 A</th>
+                <th class="py-2 px-2 text-center font-semibold text-amber-300">PTS</th>
+                <th class="py-2 px-2 text-center font-semibold text-slate-300">🪑 Bench</th>
+                <th class="py-2 pl-2 text-right font-semibold text-slate-300">FWD / MID / DEF / GK</th>
+              </tr>
+            </thead>
+            <tbody id="seasonStatsTableBody" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Past Game History Viewer -->
+      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="font-bold text-sm text-white">📜 Completed Game History</h2>
+            <p class="text-xs text-slate-400">Match results, goal scorers, and assists log</p>
+          </div>
+        </div>
+        <div id="gameHistoryList" class="space-y-2.5"></div>
+      </section>
+
+    </div>
 
   </main>
 
-  <!-- INLINE MODAL FOR EDITING A SPECIFIC SHIFT'S ACTUAL SUBS -->
-  <div id="shiftEditModal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 hidden items-center justify-center p-4">
-    <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 space-y-4">
-      <div class="flex items-start justify-between gap-2">
+  <!-- ===================================================================== -->
+  <!-- LOG TEAM GOAL MODAL (Scorer & Assist Selector)                        -->
+  <!-- ===================================================================== -->
+  <div id="goalModal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
         <div>
-          <span id="modalShiftBadge" class="text-[11px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Q1 • 1st 4m</span>
-          <h3 class="text-base font-extrabold text-slate-900 mt-1">Select Who Actually Sat Out</h3>
-          <p class="text-xs text-slate-500">Tap the girls on the bench for this shift. Saving locks this shift and auto-rebalances all later unlocked shifts.</p>
+          <h3 class="font-extrabold text-base text-white">⚽ Log Team Goal!</h3>
+          <p class="text-xs text-slate-400">Select who scored and who assisted on the play.</p>
         </div>
-        <button onclick="closeShiftEditor()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
+        <button onclick="closeGoalModal()" class="text-slate-400 hover:text-white text-sm px-2 py-1">✕</button>
       </div>
 
-      <div id="modalPlayerButtons" class="grid grid-cols-2 gap-2">
-        <!-- Populated dynamically -->
+      <!-- Scorer Selector -->
+      <div class="space-y-1.5">
+        <label class="block text-xs font-bold text-emerald-400 uppercase tracking-wider">1. Who Scored?</label>
+        <div id="goalScorerChips" class="grid grid-cols-2 gap-1.5"></div>
       </div>
 
-      <!-- Option to apply to full 8-minute quarter -->
-      <label class="flex items-center gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer">
-        <input id="modalFullQuarterCheckbox" type="checkbox" class="w-4 h-4 accent-amber-600 rounded" />
-        <span class="text-xs font-bold text-amber-950">
-          They stayed out the <strong>Full 8-Min Quarter</strong> (locks both 1st & 2nd half of this quarter)
-        </span>
-      </label>
+      <!-- Assist Selector -->
+      <div class="space-y-1.5">
+        <label class="block text-xs font-bold text-blue-400 uppercase tracking-wider">2. Assist (Optional)</label>
+        <div id="goalAssistChips" class="grid grid-cols-2 gap-1.5"></div>
+      </div>
 
-      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-        <button onclick="closeShiftEditor()" class="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
+      <div class="flex justify-end gap-2 pt-3 border-t border-slate-800">
+        <button onclick="closeGoalModal()"
+          class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
           Cancel
         </button>
-        <button onclick="saveShiftEditorChanges()" class="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition flex items-center gap-1.5">
-          <i class="fa-solid fa-check"></i>
-          <span>Save & Rebalance Rest of Game</span>
+        <button onclick="confirmGoalLog()"
+          class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow-lg">
+          ✅ Save Goal
         </button>
       </div>
     </div>
   </div>
 
-  <!-- MODAL FOR FINISHING GAME & SAVING TO SEASON TOTALS -->
-  <div id="finishGameModal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 hidden items-center justify-center p-4">
-    <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 space-y-4">
-      <div class="flex items-start justify-between gap-2">
-        <div class="flex items-center gap-2.5">
-          <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg">
-            <i class="fa-solid fa-trophy"></i>
-          </div>
-          <div>
-            <h3 class="text-base font-extrabold text-slate-900">Finish Game & Save to Season?</h3>
-            <p class="text-xs text-slate-500">Adds today's sit-out shifts to each player's permanent season total and sets up next week's game.</p>
-          </div>
+  <!-- ===================================================================== -->
+  <!-- ON-THE-FLY SHIFT & POSITION OVERRIDE MODAL                            -->
+  <!-- ===================================================================== -->
+  <div id="editModal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h3 id="modalTitle" class="font-extrabold text-base text-white">Edit Q1 • 1st Shift</h3>
+          <p class="text-xs text-slate-400">Tap Bench/Field to swap who sits, or tap a position badge to reassign.</p>
         </div>
+        <button onclick="closeEditModal()" class="text-slate-400 hover:text-white text-sm px-2 py-1">✕</button>
       </div>
 
-      <div id="finishGameSummaryList" class="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs space-y-1.5 max-h-52 overflow-y-auto">
-        <!-- Populated dynamically -->
+      <div class="flex items-center justify-between text-xs bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
+        <span id="modalBenchCounter" class="font-semibold text-slate-300">Sitting Out: 0</span>
+        <span id="modalSlotSummary" class="text-slate-400">Tap position badge to change</span>
       </div>
 
-      <div class="flex items-center justify-end gap-2 pt-2">
-        <button onclick="closeFinishGameModal()" class="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
-          Cancel
+      <div id="modalPlayerList" class="space-y-2"></div>
+
+      <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
+        <button onclick="unlockCurrentModalShift()"
+          class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 text-xs font-semibold border border-slate-700">
+          🔓 Reset to Auto
         </button>
-        <button onclick="confirmFinishAndSaveGame()" class="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition">
-          Save Totals & Start Next Week
-        </button>
+        <div class="flex gap-2">
+          <button onclick="closeEditModal()"
+            class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
+            Cancel
+          </button>
+          <button onclick="saveModalShift()"
+            class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow-lg">
+            🔒 Lock & Rebalance Rest
+          </button>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- TOAST NOTIFICATION -->
-  <div id="toastBanner" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 hidden bg-slate-900 text-white px-4 py-2.5 rounded-full shadow-xl border border-slate-700 text-xs font-bold items-center gap-2">
-    <i class="fa-solid fa-circle-check text-emerald-400"></i>
-    <span id="toastMessage">Saved!</span>
-  </div>
+  <script>
+    // =========================================================================
+    // STATE & INITIAL BLANK ROSTER CONFIGURATION
+    // =========================================================================
+    const STORAGE_KEY = 'soccer_sub_pos_stats_v3';
 
-  <!-- SUBTLE FOOTER CREDIT -->
-  <footer class="max-w-3xl w-full mx-auto px-4 pt-6 pb-2 text-center">
-    <p class="text-[11px] font-medium text-slate-400">
-      Developed by Matthew Glaser, PharmD
-    </p>
-  </footer>
-
-  <!-- FIREBASE & APPLICATION SCRIPT -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-    /********************************************************************
-     * 1. DEFAULT STATE & INITIAL ROSTER
-     ********************************************************************/
-    const DEFAULT_PLAYERS = [
-      // Pre-populated with the 7 girls on the 6U team.
-      // Prior shifts default to the cumulative totals from the last two games after the reset
-      // (Cora: 5, Ruby: 5, Blyss: 5, Ellie: 5, Hannah: 4, Riley: 4, Lilia: 4),
-      // so if Cora is absent or everyone is present, Season Balance knows Hannah & Riley are due!
-      { id: 'p_cora',   name: 'Cora',   present: true, priorShifts: 5, orderIndex: 0 },
-      { id: 'p_ruby',   name: 'Ruby',   present: true, priorShifts: 5, orderIndex: 1 },
-      { id: 'p_blyss',  name: 'Blyss',  present: true, priorShifts: 5, orderIndex: 2 },
-      { id: 'p_ellie',  name: 'Ellie',  present: true, priorShifts: 5, orderIndex: 3 },
-      { id: 'p_hannah', name: 'Hannah', present: true, priorShifts: 4, orderIndex: 4 },
-      { id: 'p_riley',  name: 'Riley',  present: true, priorShifts: 4, orderIndex: 5 },
-      { id: 'p_lilia',  name: 'Lilia',  present: true, priorShifts: 4, orderIndex: 6 }
-    ];
-
-    function createEmptyShifts() {
-      const shifts = [];
-      for (let q = 1; q <= 4; q++) {
-        shifts.push({
-          index: (q - 1) * 2,
-          quarter: q,
-          half: 1,
-          label: `Q${q} • 1st 4m`,
-          timeRange: '8:00 – 4:00',
-          benchIds: [],
-          locked: false,
-          isOverride: false
-        });
-        shifts.push({
-          index: (q - 1) * 2 + 1,
-          quarter: q,
-          half: 2,
-          label: `Q${q} • 2nd 4m`,
-          timeRange: '4:00 – 0:00',
-          benchIds: [],
-          locked: false,
-          isOverride: false
-        });
-      }
-      return shifts;
-    }
-
-    const appState = {
-      players: JSON.parse(JSON.stringify(DEFAULT_PLAYERS)),
-      fieldSize: 5,
-      balanceMode: 'season', // 'season' | 'today'
-      smsFormat: 'compact',  // 'compact' | 'detailed'
-      shifts: createEmptyShifts(),
-      // Timer state (in-memory + synced quarter)
-      timer: {
-        quarter: 1,
-        remainingSeconds: 480, // 8 minutes = 480 seconds
-        running: false,
-        lastTickTimestamp: null,
-        muted: false,
-        midAlertTriggeredForQtr: false,
-        endAlertTriggeredForQtr: false,
-        activeAlertType: null // 'mid' | 'end' | null
-      }
+    const FORMATION_PRESETS = {
+      '5v5_212':  { label: '5v5 (2-1-2)',     slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 } },
+      '5v5_32':   { label: '5v5 (3-2)',       slots: { FWD: 3, MID: 0, DEF: 2, GK: 0 } },
+      '4v4_22':   { label: '4v4 (2-2)',       slots: { FWD: 2, MID: 0, DEF: 2, GK: 0 } },
+      '5v5_gk':   { label: '5v5 + GK',        slots: { FWD: 2, MID: 0, DEF: 2, GK: 1 } },
+      '6v6_gk':   { label: '6v6 (2-1-2+GK)',  slots: { FWD: 2, MID: 1, DEF: 2, GK: 1 } },
+      '7v7_231':  { label: '7v7 (2-3-1+GK)',  slots: { FWD: 2, MID: 3, DEF: 1, GK: 1 } },
+      '7v7_222':  { label: '7v7 (2-2-2+GK)',  slots: { FWD: 2, MID: 2, DEF: 2, GK: 1 } },
+      '9v9_332':  { label: '9v9 (2-3-3+GK)',  slots: { FWD: 2, MID: 3, DEF: 3, GK: 1 } },
+      '11v11_433':{ label: '11v11 (3-3-4+GK)',slots: { FWD: 3, MID: 3, DEF: 4, GK: 1 } }
     };
 
-    /********************************************************************
-     * 2. AUTO-BALANCER & FAIR ROTATION ALGORITHM
-     ********************************************************************/
-    function recalculateSchedule() {
-      const presentPlayers = appState.players
-        .filter(p => p.present)
-        .sort((a, b) => a.orderIndex - b.orderIndex);
+    let state = {
+      activeTab: 'game', // 'game' | 'stats'
+      teamName: 'My Team',
+      trackPositions: true,
+      smsStyle: 'positions',
+      formationKey: '5v5_212',
+      slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 },
+      quarterMins: 8,
+      shiftsPerQuarter: 2,
+      // Starts blank on initial load so coach is prompted to add their roster
+      players: [],
+      lockedShifts: {},
+      fullQuarterLocks: { 1: false, 2: false, 3: false, 4: false },
+      computedShifts: [],
+      // Live Match Score & Goal Tracker
+      currentMatch: {
+        opponent: 'Opponent',
+        ourScore: 0,
+        oppScore: 0,
+        goals: [] // { id, quarter, clock, scorerId, assistId }
+      },
+      // Saved Completed Games
+      gameHistory: []
+    };
 
-      const benchCount = Math.max(0, presentPlayers.length - appState.fieldSize);
+    // Sideline Timer State
+    let timer = {
+      quarter: 1,
+      secondsLeft: 8 * 60,
+      running: false,
+      intervalId: null,
+      midAlertFired: false
+    };
 
-      // Track how many times each player has sat so far in the current game
-      // and the most recent shift index they sat out.
-      const todayCounts = {};
-      const lastSatIndex = {};
-      appState.players.forEach(p => {
-        todayCounts[p.id] = 0;
-        lastSatIndex[p.id] = -99;
-      });
+    // Modal Temp States
+    let editingShiftIdx = null;
+    let modalDraft = { benchIds: [], positions: {} };
+    let goalDraft = { scorerId: null, assistId: null };
 
-      for (let s = 0; s < 8; s++) {
-        const shift = appState.shifts[s];
-
-        if (shift.locked) {
-          // Preserve locked shifts as-is and tally their sit-outs
-          shift.benchIds.forEach(pid => {
-            if (todayCounts[pid] !== undefined) {
-              todayCounts[pid] += 1;
-              lastSatIndex[pid] = s;
-            }
+    // =========================================================================
+    // INITIALIZATION & PERSISTENCE
+    // =========================================================================
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          state = { ...state, ...parsed };
+          state.players.forEach(p => {
+            p.number = p.number || '';
+            p.prior = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0, ...(p.prior || {}) };
           });
-          continue;
-        }
-
-        if (benchCount === 0 || presentPlayers.length === 0) {
-          shift.benchIds = [];
-          continue;
-        }
-
-        const prevBench = s > 0 ? appState.shifts[s - 1].benchIds : [];
-        const nextLockedBench = (s < 7 && appState.shifts[s + 1].locked)
-          ? appState.shifts[s + 1].benchIds
-          : [];
-
-        // Sort candidates by:
-        // 1. Did NOT sit in immediately preceding shift (strictly prevent >4m consecutive sitting)
-        // 2. Will NOT sit in immediately following locked shift (prevent creating consecutive sitting)
-        // 3. Lowest effective shift score (Season Total vs Today Only)
-        // 4. Longest stretch on the field since last sitting in today's game (smallest lastSatIndex)
-        // 5. Tie-breakers: priorShifts, then roster orderIndex
-        const candidates = [...presentPlayers].sort((a, b) => {
-          const aSatPrev = prevBench.includes(a.id) ? 1 : 0;
-          const bSatPrev = prevBench.includes(b.id) ? 1 : 0;
-          if (aSatPrev !== bSatPrev) return aSatPrev - bSatPrev;
-
-          const aSatNext = nextLockedBench.includes(a.id) ? 1 : 0;
-          const bSatNext = nextLockedBench.includes(b.id) ? 1 : 0;
-          if (aSatNext !== bSatNext) return aSatNext - bSatNext;
-
-          const aScore = appState.balanceMode === 'season'
-            ? (a.priorShifts + todayCounts[a.id])
-            : todayCounts[a.id];
-          const bScore = appState.balanceMode === 'season'
-            ? (b.priorShifts + todayCounts[b.id])
-            : todayCounts[b.id];
-          if (aScore !== bScore) return aScore - bScore;
-
-          // If tied on score, prefer whoever hasn't sat recently today
-          if (lastSatIndex[a.id] !== lastSatIndex[b.id]) {
-            return lastSatIndex[a.id] - lastSatIndex[b.id];
-          }
-
-          // Secondary tie-breaker: prior season shifts
-          if (a.priorShifts !== b.priorShifts) {
-            return a.priorShifts - b.priorShifts;
-          }
-
-          return a.orderIndex - b.orderIndex;
-        });
-
-        const chosen = candidates.slice(0, benchCount).map(p => p.id);
-        shift.benchIds = chosen;
-
-        chosen.forEach(pid => {
-          todayCounts[pid] += 1;
-          lastSatIndex[pid] = s;
-        });
-      }
-    }
-
-    /********************************************************************
-     * 3. FIREBASE CLOUD PERSISTENCE (FOLLOWING ALL 3 MANDATORY RULES)
-     ********************************************************************/
-    let db = null;
-    let auth = null;
-    let currentUser = null;
-    let isApplyingRemoteSnapshot = false;
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-6u-soccer-app';
-
-    function updateSyncBadge(status, label) {
-      const dot = document.getElementById('syncDot');
-      const text = document.getElementById('syncText');
-      if (!dot || !text) return;
-      text.textContent = label;
-      dot.className = 'w-2 h-2 rounded-full ';
-      if (status === 'synced') {
-        dot.className += 'bg-emerald-400';
-      } else if (status === 'saving') {
-        dot.className += 'bg-amber-400 animate-pulse';
-      } else {
-        dot.className += 'bg-slate-400';
-      }
-    }
-
-    async function initFirebase() {
-      try {
-        if (typeof __firebase_config === 'undefined' || !__firebase_config) {
-          updateSyncBadge('local', 'Session Ready');
-          return;
-        }
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-
-        // RULE 3: Auth Before Queries - sign in first and await it
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-
-        currentUser = auth.currentUser;
-        if (!currentUser) {
-          updateSyncBadge('local', 'Session Ready');
-          return;
-        }
-
-        // RULE 1: Strict Path `/artifacts/{appId}/public/data/soccerState/teamDoc`
-        // Using public data collection so coaches/parents opening the app see the live team schedule
-        const stateDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'soccerState', 'teamScheduleDoc');
-
-        // RULE 2 & Error Callback requirement on onSnapshot
-        onSnapshot(
-          stateDocRef,
-          (snapshot) => {
-            if (snapshot.exists()) {
-              const data = snapshot.data();
-              if (data && data.payload) {
-                try {
-                  const parsed = JSON.parse(data.payload);
-                  isApplyingRemoteSnapshot = true;
-                  if (Array.isArray(parsed.players) && parsed.players.length > 0) {
-                    appState.players = parsed.players;
-                  }
-                  if (typeof parsed.fieldSize === 'number') {
-                    appState.fieldSize = parsed.fieldSize;
-                  }
-                  if (parsed.balanceMode) {
-                    appState.balanceMode = parsed.balanceMode;
-                  }
-                  if (parsed.smsFormat) {
-                    appState.smsFormat = parsed.smsFormat;
-                  }
-                  if (Array.isArray(parsed.shifts) && parsed.shifts.length === 8) {
-                    appState.shifts = parsed.shifts;
-                  }
-                  if (parsed.timerQuarter) {
-                    appState.timer.quarter = parsed.timerQuarter;
-                  }
-                  renderAll();
-                  isApplyingRemoteSnapshot = false;
-                  updateSyncBadge('synced', 'Cloud Synced');
-                } catch (err) {
-                  console.error('Error parsing remote state:', err);
-                }
-              }
-            } else {
-              // First time initialization in cloud
-              saveStateToCloud();
-            }
-          },
-          (error) => {
-            console.error('Firestore listener error:', error);
-            updateSyncBadge('local', 'Offline Mode');
-          }
-        );
-      } catch (err) {
-        console.error('Firebase init error:', err);
-        updateSyncBadge('local', 'Offline Mode');
-      }
-    }
-
-    async function saveStateToCloud() {
-      if (isApplyingRemoteSnapshot) return;
-      if (!db || !currentUser) {
-        updateSyncBadge('local', 'Ready');
-        return;
-      }
-      try {
-        updateSyncBadge('saving', 'Saving...');
-        const stateDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'soccerState', 'teamScheduleDoc');
-        const payloadObj = {
-          players: appState.players,
-          fieldSize: appState.fieldSize,
-          balanceMode: appState.balanceMode,
-          smsFormat: appState.smsFormat,
-          shifts: appState.shifts,
-          timerQuarter: appState.timer.quarter,
-          updatedAt: Date.now()
-        };
-        await setDoc(stateDocRef, { payload: JSON.stringify(payloadObj) });
-        updateSyncBadge('synced', 'Cloud Saved');
-      } catch (err) {
-        console.error('Save error:', err);
-        updateSyncBadge('local', 'Save Pending');
-      }
-    }
-
-    /********************************************************************
-     * 4. WEB AUDIO SYNTHESIZED REFEREE WHISTLE / CHIME FOR SUB ALERTS
-     ********************************************************************/
-    let audioCtx = null;
-
-    function ensureAudioContext() {
-      if (!audioCtx) {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass) {
-          audioCtx = new AudioContextClass();
-        }
-      }
-      if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
-    }
-
-    function playSubWhistleSound(type = 'mid') {
-      if (appState.timer.muted) return;
-      try {
-        ensureAudioContext();
-        if (!audioCtx) return;
-
-        const now = audioCtx.currentTime;
-        // Create two crisp whistle blasts for Mid-Quarter, or three blasts for End-of-Quarter
-        const blasts = type === 'end'
-          ? [{ start: 0, dur: 0.22, freq: 2650 }, { start: 0.28, dur: 0.22, freq: 2650 }, { start: 0.56, dur: 0.45, freq: 2800 }]
-          : [{ start: 0, dur: 0.24, freq: 2500 }, { start: 0.30, dur: 0.35, freq: 2750 }];
-
-        blasts.forEach(b => {
-          const osc = audioCtx.createOscillator();
-          const mod = audioCtx.createOscillator();
-          const modGain = audioCtx.createGain();
-          const mainGain = audioCtx.createGain();
-
-          // Whistle pea trill modulation
-          mod.type = 'sine';
-          mod.frequency.setValueAtTime(38, now + b.start);
-          modGain.gain.setValueAtTime(95, now + b.start);
-
-          osc.type = 'triangle';
-          osc.frequency.setValueAtTime(b.freq, now + b.start);
-
-          mod.connect(modGain);
-          modGain.connect(osc.frequency);
-
-          mainGain.gain.setValueAtTime(0.001, now + b.start);
-          mainGain.gain.exponentialRampToValueAtTime(0.28, now + b.start + 0.03);
-          mainGain.gain.setValueAtTime(0.28, now + b.start + b.dur - 0.04);
-          mainGain.gain.exponentialRampToValueAtTime(0.001, now + b.start + b.dur);
-
-          osc.connect(mainGain);
-          mainGain.connect(audioCtx.destination);
-
-          osc.start(now + b.start);
-          mod.start(now + b.start);
-          osc.stop(now + b.start + b.dur);
-          mod.stop(now + b.start + b.dur);
-        });
-
-        if (navigator.vibrate) {
-          navigator.vibrate([300, 120, 300]);
+          state.currentMatch = {
+            opponent: 'Opponent',
+            ourScore: 0,
+            oppScore: 0,
+            goals: [],
+            ...(parsed.currentMatch || {})
+          };
+          state.gameHistory = parsed.gameHistory || [];
         }
       } catch (e) {
-        console.warn('Audio whistle playback skipped:', e);
+        console.warn('Could not load saved state:', e);
       }
+      timer.secondsLeft = state.quarterMins * 60;
+      recalculateSchedule();
+      renderAll();
     }
 
-    /********************************************************************
-     * 5. SIDELINE TIMER ENGINE (8:00 QUARTERS WITH 4:00 & 0:00 SUB ALERTS)
-     ********************************************************************/
-    function getActiveShiftIndex() {
-      const q = appState.timer.quarter; // 1..4
-      const isSecondHalf = appState.timer.remainingSeconds <= 240;
-      return (q - 1) * 2 + (isSecondHalf ? 1 : 0);
-    }
-
-    function formatMMSS(totalSec) {
-      const clamped = Math.max(0, Math.round(totalSec));
-      const m = Math.floor(clamped / 60);
-      const s = clamped % 60;
-      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    }
-
-    setInterval(() => {
-      if (!appState.timer.running) return;
-      const now = Date.now();
-      const elapsedSec = (now - appState.timer.lastTickTimestamp) / 1000;
-      if (elapsedSec >= 0.25) {
-        const prevSec = appState.timer.remainingSeconds;
-        appState.timer.remainingSeconds = Math.max(0, prevSec - elapsedSec);
-        appState.timer.lastTickTimestamp = now;
-
-        // Check if we just crossed 4:00 (240 seconds)
-        if (prevSec > 240 && appState.timer.remainingSeconds <= 240 && !appState.timer.midAlertTriggeredForQtr) {
-          appState.timer.midAlertTriggeredForQtr = true;
-          triggerSubAlert('mid');
-        }
-
-        // Check if we reached 0:00 (End of Quarter)
-        if (appState.timer.remainingSeconds <= 0) {
-          appState.timer.remainingSeconds = 0;
-          appState.timer.running = false;
-          if (!appState.timer.endAlertTriggeredForQtr) {
-            appState.timer.endAlertTriggeredForQtr = true;
-            triggerSubAlert('end');
-          }
-        }
-
-        renderTimerUI();
-      }
-    }, 200);
-
-    function triggerSubAlert(type) {
-      appState.timer.activeAlertType = type;
-      playSubWhistleSound(type);
-      renderTimerUI();
-      renderScheduleUI();
-    }
-
-    window.toggleTimer = function() {
-      ensureAudioContext();
-      if (appState.timer.running) {
-        appState.timer.running = false;
-        appState.timer.lastTickTimestamp = null;
-      } else {
-        if (appState.timer.remainingSeconds <= 0) {
-          appState.timer.remainingSeconds = 480;
-          appState.timer.midAlertTriggeredForQtr = false;
-          appState.timer.endAlertTriggeredForQtr = false;
-        }
-        appState.timer.running = true;
-        appState.timer.lastTickTimestamp = Date.now();
-      }
-      renderTimerUI();
-    };
-
-    window.adjustTimerSeconds = function(delta) {
-      appState.timer.remainingSeconds = Math.min(480, Math.max(0, appState.timer.remainingSeconds + delta));
-      if (appState.timer.remainingSeconds > 240) {
-        appState.timer.midAlertTriggeredForQtr = false;
-      }
-      if (appState.timer.remainingSeconds > 0) {
-        appState.timer.endAlertTriggeredForQtr = false;
-      }
-      renderTimerUI();
-      renderScheduleUI();
-    };
-
-    window.jumpToMidQuarter = function() {
-      ensureAudioContext();
-      appState.timer.remainingSeconds = 240;
-      appState.timer.midAlertTriggeredForQtr = true;
-      triggerSubAlert('mid');
-    };
-
-    window.resetQuarterTimer = function() {
-      appState.timer.running = false;
-      appState.timer.remainingSeconds = 480;
-      appState.timer.midAlertTriggeredForQtr = false;
-      appState.timer.endAlertTriggeredForQtr = false;
-      appState.timer.activeAlertType = null;
-      renderTimerUI();
-      renderScheduleUI();
-    };
-
-    window.selectQuarter = function(q) {
-      appState.timer.quarter = q;
-      appState.timer.running = false;
-      appState.timer.remainingSeconds = 480;
-      appState.timer.midAlertTriggeredForQtr = false;
-      appState.timer.endAlertTriggeredForQtr = false;
-      appState.timer.activeAlertType = null;
-      renderTimerUI();
-      renderScheduleUI();
-      saveStateToCloud();
-    };
-
-    window.testWhistleOrToggleMute = function() {
-      appState.timer.muted = !appState.timer.muted;
-      if (!appState.timer.muted) {
-        playSubWhistleSound('mid');
-        showToast('Whistle Sound Enabled');
-      } else {
-        showToast('Sound Muted');
-      }
-      renderTimerUI();
-    };
-
-    window.dismissSubAlert = function() {
-      appState.timer.activeAlertType = null;
-      renderTimerUI();
-    };
-
-    window.confirmSubAlertAction = function() {
-      const q = appState.timer.quarter;
-      const firstShiftIdx = (q - 1) * 2;
-      const secondShiftIdx = firstShiftIdx + 1;
-
-      if (appState.timer.activeAlertType === 'mid') {
-        appState.shifts[firstShiftIdx].locked = true;
-        appState.timer.activeAlertType = null;
-        showToast(`Q${q} 1st Half Locked!`);
-      } else if (appState.timer.activeAlertType === 'end') {
-        appState.shifts[firstShiftIdx].locked = true;
-        appState.shifts[secondShiftIdx].locked = true;
-        appState.timer.activeAlertType = null;
-        if (q < 4) {
-          appState.timer.quarter = q + 1;
-          appState.timer.remainingSeconds = 480;
-          appState.timer.midAlertTriggeredForQtr = false;
-          appState.timer.endAlertTriggeredForQtr = false;
-          showToast(`Q${q} Complete! Ready for Q${q + 1}`);
-        } else {
-          showToast('Q4 Complete! Great Game!');
-        }
-      }
-      renderAll();
-      saveStateToCloud();
-    };
-
-    window.lockCurrentShiftAndAdvance = function() {
-      const idx = getActiveShiftIndex();
-      appState.shifts[idx].locked = true;
-      if (idx % 2 === 0 && appState.timer.remainingSeconds > 240) {
-        // Jump to 2nd half of current quarter
-        appState.timer.remainingSeconds = 240;
-        appState.timer.midAlertTriggeredForQtr = true;
-        showToast(`${appState.shifts[idx].label} Locked • Now in 2nd 4m`);
-      } else if (appState.timer.quarter < 4) {
-        appState.timer.quarter += 1;
-        appState.timer.remainingSeconds = 480;
-        appState.timer.running = false;
-        appState.timer.midAlertTriggeredForQtr = false;
-        appState.timer.endAlertTriggeredForQtr = false;
-        showToast(`${appState.shifts[idx].label} Locked • Moved to Q${appState.timer.quarter}`);
-      } else {
-        showToast(`${appState.shifts[idx].label} Locked!`);
-      }
-      renderAll();
-      saveStateToCloud();
-    };
-
-    /********************************************************************
-     * 6. ROSTER, ATTENDANCE & LIVE SHIFT OVERRIDE HANDLERS
-     ********************************************************************/
-    function getPlayerName(id) {
-      const p = appState.players.find(pl => pl.id === id);
-      return p ? p.name : 'Unknown';
-    }
-
-    function formatPlayerNamesList(ids, emptyText = 'None (All Play)') {
-      if (!ids || ids.length === 0) return emptyText;
-      const names = ids.map(getPlayerName);
-      if (names.length === 1) return names[0];
-      if (names.length === 2) return `${names[0]} and ${names[1]}`;
-      return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
-    }
-
-    window.togglePlayerAttendance = function(playerId) {
-      const p = appState.players.find(pl => pl.id === playerId);
-      if (!p) return;
-      p.present = !p.present;
-
-      // Remove absent player from any unlocked shifts and recalculate
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast(`${p.name} marked ${p.present ? 'Present' : 'Absent'}`);
-    };
-
-    window.setAllAttendance = function(presentStatus) {
-      appState.players.forEach(p => { p.present = presentStatus; });
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast('All players marked Present');
-    };
-
-    window.changeFieldSize = function(delta) {
-      appState.fieldSize = Math.min(11, Math.max(3, appState.fieldSize + delta));
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-    };
-
-    window.setBalanceMode = function(mode) {
-      appState.balanceMode = mode;
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast(mode === 'season' ? 'Balancing Season + Today' : 'Balancing Today Only (Reset Mode)');
-    };
-
-    window.toggleRosterManager = function() {
-      const drawer = document.getElementById('rosterManagerDrawer');
-      drawer.classList.toggle('hidden');
-    };
-
-    window.adjustPriorShifts = function(playerId, delta) {
-      const p = appState.players.find(pl => pl.id === playerId);
-      if (!p) return;
-      p.priorShifts = Math.max(0, p.priorShifts + delta);
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-    };
-
-    window.resetPriorShiftsToZero = function() {
-      appState.players.forEach(p => { p.priorShifts = 0; });
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast('Prior shifts reset to 0');
-    };
-
-    window.loadThreeGameHistoryPreset = function() {
-      // Matches the exact 2-week post-reset history from our conversation:
-      // Cora (3+2=5), Ruby (3+2=5), Blyss (2+3=5), Ellie (2+3=5), Hannah (2+2=4), Riley (2+2=4), Lilia (2+2=4)
-      const preset = {
-        'Cora': 5, 'Ruby': 5, 'Blyss': 5, 'Ellie': 5,
-        'Hannah': 4, 'Riley': 4, 'Lilia': 4
-      };
-      appState.players.forEach(p => {
-        if (preset[p.name] !== undefined) {
-          p.priorShifts = preset[p.name];
-        }
-      });
-      appState.balanceMode = 'season';
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast('Loaded Past 2 Weeks Shift Totals');
-    };
-
-    window.addNewPlayer = function() {
-      const input = document.getElementById('newPlayerNameInput');
-      const name = (input.value || '').trim();
-      if (!name) return;
-      const newId = 'p_' + Date.now();
-      appState.players.push({
-        id: newId,
-        name: name,
-        present: true,
-        priorShifts: 0,
-        orderIndex: appState.players.length
-      });
-      input.value = '';
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast(`Added ${name} to roster`);
-    };
-
-    window.removePlayer = function(playerId) {
-      if (appState.players.length <= 1) return;
-      const idx = appState.players.findIndex(p => p.id === playerId);
-      if (idx === -1) return;
-      const removedName = appState.players[idx].name;
-      appState.players.splice(idx, 1);
-      appState.players.forEach((p, i) => { p.orderIndex = i; });
-      // Remove from shifts
-      appState.shifts.forEach(s => {
-        s.benchIds = s.benchIds.filter(id => id !== playerId);
-      });
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast(`Removed ${removedName}`);
-    };
-
-    window.toggleShiftLock = function(shiftIndex) {
-      const shift = appState.shifts[shiftIndex];
-      if (!shift) return;
-      shift.locked = !shift.locked;
-      if (!shift.locked) {
-        shift.isOverride = false;
-      }
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-    };
-
-    window.makeQuarterFullEightMin = function(quarterNum) {
-      const firstIdx = (quarterNum - 1) * 2;
-      const secondIdx = firstIdx + 1;
-      const firstShift = appState.shifts[firstIdx];
-      const secondShift = appState.shifts[secondIdx];
-
-      // Copy 1st half bench to 2nd half, lock both, and rebalance all remaining unlocked shifts!
-      secondShift.benchIds = [...firstShift.benchIds];
-      firstShift.locked = true;
-      secondShift.locked = true;
-      secondShift.isOverride = true;
-
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast(`Q${quarterNum} set to Full 8-Min Shift • Future shifts rebalanced!`);
-    };
-
-    window.unlockAllAndRecalculate = function() {
-      appState.shifts.forEach(s => {
-        s.locked = false;
-        s.isOverride = false;
-      });
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast('All shifts unlocked & freshly balanced');
-    };
-
-    /********************************************************************
-     * 7. MODAL FOR ON-THE-FLY SHIFT EDITING
-     ********************************************************************/
-    let editingShiftIndex = null;
-    let tempSelectedBenchIds = [];
-
-    window.openShiftEditor = function(shiftIndex) {
-      editingShiftIndex = shiftIndex;
-      const shift = appState.shifts[shiftIndex];
-      tempSelectedBenchIds = [...shift.benchIds];
-
-      document.getElementById('modalShiftBadge').textContent = `${shift.label} (${shift.timeRange})`;
-      const fullQtrCheckbox = document.getElementById('modalFullQuarterCheckbox');
-      fullQtrCheckbox.checked = false;
-
-      renderModalPlayerButtons();
-      const modal = document.getElementById('shiftEditModal');
-      modal.classList.remove('hidden');
-      modal.classList.add('flex');
-    };
-
-    window.closeShiftEditor = function() {
-      const modal = document.getElementById('shiftEditModal');
-      modal.classList.add('hidden');
-      modal.classList.remove('flex');
-      editingShiftIndex = null;
-    };
-
-    function renderModalPlayerButtons() {
-      const container = document.getElementById('modalPlayerButtons');
-      const presentPlayers = appState.players.filter(p => p.present);
-      container.innerHTML = presentPlayers.map(p => {
-        const isSitting = tempSelectedBenchIds.includes(p.id);
-        return `
-          <button type="button" onclick="toggleTempBenchPlayer('${p.id}')"
-            class="p-3 rounded-xl border text-left transition flex items-center justify-between ${
-              isSitting
-                ? 'bg-amber-100 border-amber-400 text-amber-950 font-extrabold shadow-xs'
-                : 'bg-slate-50 border-slate-200 text-slate-700 font-semibold hover:bg-slate-100'
-            }">
-            <div class="flex items-center gap-2">
-              <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                isSitting ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600'
-              }">
-                ${isSitting ? '<i class="fa-solid fa-chair"></i>' : '<i class="fa-solid fa-futbol"></i>'}
-              </span>
-              <span class="text-sm">${p.name}</span>
-            </div>
-            <span class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
-              isSitting ? 'bg-amber-200 text-amber-900' : 'bg-emerald-100 text-emerald-800'
-            }">
-              ${isSitting ? 'Out' : 'Play'}
-            </span>
-          </button>
-        `;
-      }).join('');
-    }
-
-    window.toggleTempBenchPlayer = function(playerId) {
-      if (tempSelectedBenchIds.includes(playerId)) {
-        tempSelectedBenchIds = tempSelectedBenchIds.filter(id => id !== playerId);
-      } else {
-        tempSelectedBenchIds.push(playerId);
-      }
-      renderModalPlayerButtons();
-    };
-
-    window.saveShiftEditorChanges = function() {
-      if (editingShiftIndex === null) return;
-      const shift = appState.shifts[editingShiftIndex];
-      shift.benchIds = [...tempSelectedBenchIds];
-      shift.locked = true;
-      shift.isOverride = true;
-
-      const applyFullQuarter = document.getElementById('modalFullQuarterCheckbox').checked;
-      if (applyFullQuarter) {
-        const q = shift.quarter;
-        const firstIdx = (q - 1) * 2;
-        const secondIdx = firstIdx + 1;
-        appState.shifts[firstIdx].benchIds = [...tempSelectedBenchIds];
-        appState.shifts[firstIdx].locked = true;
-        appState.shifts[firstIdx].isOverride = true;
-        appState.shifts[secondIdx].benchIds = [...tempSelectedBenchIds];
-        appState.shifts[secondIdx].locked = true;
-        appState.shifts[secondIdx].isOverride = true;
-      }
-
-      closeShiftEditor();
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast('Actual subs locked & remaining shifts rebalanced!');
-    };
-
-    /********************************************************************
-     * 8. FINISH & SAVE GAME TO SEASON TOTALS MODAL
-     ********************************************************************/
-    window.openFinishGameModal = function() {
-      const todayCounts = getTodaySitCounts();
-      const listEl = document.getElementById('finishGameSummaryList');
-      listEl.innerHTML = appState.players.map(p => {
-        const add = todayCounts[p.id] || 0;
-        const newTotal = p.priorShifts + add;
-        return `
-          <div class="flex items-center justify-between py-1 border-b border-slate-200/60 last:border-none">
-            <span class="font-bold text-slate-800">${p.name} ${!p.present ? '<span class="text-[10px] text-rose-600 font-semibold">(Absent)</span>' : ''}</span>
-            <span class="font-mono text-slate-600">
-              ${p.priorShifts} prior + <strong>${add} today</strong> = <strong class="text-emerald-700">${newTotal} shifts</strong>
-            </span>
-          </div>
-        `;
-      }).join('');
-
-      const modal = document.getElementById('finishGameModal');
-      modal.classList.remove('hidden');
-      modal.classList.add('flex');
-    };
-
-    window.closeFinishGameModal = function() {
-      const modal = document.getElementById('finishGameModal');
-      modal.classList.add('hidden');
-      modal.classList.remove('flex');
-    };
-
-    window.confirmFinishAndSaveGame = function() {
-      const todayCounts = getTodaySitCounts();
-      appState.players.forEach(p => {
-        p.priorShifts += (todayCounts[p.id] || 0);
-        p.present = true; // Reset attendance to all present for next week
-      });
-      appState.shifts.forEach(s => {
-        s.locked = false;
-        s.isOverride = false;
-      });
-      appState.balanceMode = 'season';
-      appState.timer.quarter = 1;
-      appState.timer.remainingSeconds = 480;
-      appState.timer.running = false;
-      appState.timer.activeAlertType = null;
-
-      closeFinishGameModal();
-      recalculateSchedule();
-      renderAll();
-      saveStateToCloud();
-      showToast('Season totals updated! Next week schedule ready.');
-    };
-
-    /********************************************************************
-     * 9. SMS / RCS TEXT GENERATION & CLIPBOARD COPY
-     ********************************************************************/
-    window.setSmsFormat = function(fmt) {
-      appState.smsFormat = fmt;
-      renderSmsSection();
-      saveStateToCloud();
-    };
-
-    function getCompactBubbleLines() {
-      const lines = [];
-      for (let q = 1; q <= 4; q++) {
-        const s1 = appState.shifts[(q - 1) * 2];
-        const s2 = appState.shifts[(q - 1) * 2 + 1];
-        const ord = q === 1 ? '1st' : q === 2 ? '2nd' : q === 3 ? '3rd' : '4th';
-
-        const names1 = formatPlayerNamesList(s1.benchIds, 'None');
-        const names2 = formatPlayerNamesList(s2.benchIds, 'None');
-
-        // If the exact same players sit both halves of the quarter (8-min shift), combine cleanly
-        const sameBench = s1.benchIds.length === s2.benchIds.length &&
-          s1.benchIds.every(id => s2.benchIds.includes(id));
-
-        if (sameBench) {
-          lines.push(`Out ${ord} (Full 8m): ${names1}`);
-        } else {
-          lines.push(`Out ${ord}: ${names1}`);
-          lines.push(`2nd part of ${ord}: ${names2}`);
-        }
-      }
-      return lines;
-    }
-
-    function generateSmsText() {
-      if (appState.smsFormat === 'compact') {
-        return getCompactBubbleLines().join('\n');
-      } else {
-        const lines = ['⚽ 6U Soccer Sub Schedule'];
-        for (let q = 1; q <= 4; q++) {
-          const s1 = appState.shifts[(q - 1) * 2];
-          const s2 = appState.shifts[(q - 1) * 2 + 1];
-          lines.push(`\nQuarter ${q}:`);
-          lines.push(`• 1st 4m: ${formatPlayerNamesList(s1.benchIds, 'None')}`);
-          lines.push(`• 2nd 4m: ${formatPlayerNamesList(s2.benchIds, 'None')}`);
-        }
-        const todayCounts = getTodaySitCounts();
-        lines.push('\nSit-Out Totals Today:');
-        appState.players.filter(p => p.present).forEach(p => {
-          const c = todayCounts[p.id] || 0;
-          lines.push(`• ${p.name}: ${c} ${c === 1 ? 'shift' : 'shifts'} (${c * 4}m)`);
-        });
-        return lines.join('\n');
-      }
-    }
-
-    function copyTextHelper(text, feedbackMsg) {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
+    function saveState() {
       try {
-        document.execCommand('copy');
-        showToast(feedbackMsg || 'Copied to clipboard!');
-      } catch (err) {
-        console.error('Copy error:', err);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          activeTab: state.activeTab,
+          teamName: state.teamName,
+          trackPositions: state.trackPositions,
+          smsStyle: state.smsStyle,
+          formationKey: state.formationKey,
+          slots: state.slots,
+          quarterMins: state.quarterMins,
+          shiftsPerQuarter: state.shiftsPerQuarter,
+          players: state.players,
+          lockedShifts: state.lockedShifts,
+          fullQuarterLocks: state.fullQuarterLocks,
+          currentMatch: state.currentMatch,
+          gameHistory: state.gameHistory
+        }));
+      } catch (e) {
+        console.warn('Save error:', e);
       }
-      document.body.removeChild(ta);
     }
 
-    window.copyScheduleToClipboard = function() {
-      const text = generateSmsText();
-      copyTextHelper(text, 'Schedule copied for texting!');
-      const btnText = document.getElementById('copySmsBtnText');
-      btnText.textContent = 'Copied! Ready to Paste in Text';
-      setTimeout(() => {
-        btnText.textContent = 'Copy Schedule to Clipboard';
-      }, 2200);
-    };
+    // Helper to display "#10 Maya" or "Maya"
+    function formatPlayerBadge(player) {
+      if (!player) return '';
+      return player.number ? `#${player.number} ${player.name}` : player.name;
+    }
 
-    window.copySingleBubbleLine = function(encodedLine) {
-      const line = decodeURIComponent(encodedLine);
-      copyTextHelper(line, `Copied: "${line}"`);
-    };
+    function getPlayerDisplayById(id) {
+      if (id === 'OWN_GOAL') return 'Own Goal';
+      const p = state.players.find(x => x.id === id);
+      return p ? formatPlayerBadge(p) : 'Team Goal';
+    }
 
-    window.scrollToSection = function(id) {
-      const el = document.getElementById(id);
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    };
+    // =========================================================================
+    // FAIR BENCH + POSITION ROTATION ENGINE
+    // =========================================================================
+    function getTotalFieldSlots() {
+      return (state.slots.FWD || 0) + (state.slots.MID || 0) + (state.slots.DEF || 0) + (state.slots.GK || 0);
+    }
 
-    /********************************************************************
-     * 10. UI RENDERING FUNCTIONS
-     ********************************************************************/
-    function getTodaySitCounts() {
-      const counts = {};
-      appState.players.forEach(p => { counts[p.id] = 0; });
-      appState.shifts.forEach(s => {
-        s.benchIds.forEach(id => {
-          if (counts[id] !== undefined) counts[id] += 1;
-        });
+    function getTotalShiftsCount() {
+      return 4 * state.shiftsPerQuarter;
+    }
+
+    function recalculateSchedule() {
+      const presentPlayers = state.players.filter(p => p.present);
+      const numPresent = presentPlayers.length;
+      const fieldSize = getTotalFieldSlots();
+      const numSitting = Math.max(0, numPresent - fieldSize);
+      const totalShifts = getTotalShiftsCount();
+
+      const runningCounts = {};
+      presentPlayers.forEach(p => {
+        runningCounts[p.id] = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0 };
       });
-      return counts;
+
+      const shifts = [];
+
+      for (let s = 0; s < totalShifts; s++) {
+        const quarter = Math.floor(s / state.shiftsPerQuarter) + 1;
+        const part = (s % state.shiftsPerQuarter) + 1;
+        const prevShift = s > 0 ? shifts[s - 1] : null;
+
+        let benchIds = [];
+        let posMap = {};
+        let isLocked = false;
+
+        if (numPresent === 0) {
+          shifts.push({ index: s, quarter, part, benchIds: [], positions: {}, locked: false });
+          continue;
+        }
+
+        if (state.shiftsPerQuarter === 2 && part === 2 && state.fullQuarterLocks[quarter] && prevShift) {
+          benchIds = [...prevShift.benchIds];
+          posMap = { ...prevShift.positions };
+          isLocked = true;
+        } else if (state.lockedShifts[s]) {
+          const lock = state.lockedShifts[s];
+          benchIds = lock.benchIds.filter(id => presentPlayers.some(p => p.id === id));
+          posMap = { ...(lock.positions || {}) };
+          isLocked = true;
+        } else {
+          const candidates = presentPlayers.map((p, idx) => {
+            const satPrev = prevShift ? prevShift.benchIds.includes(p.id) : false;
+            const totalBench = (p.prior.BENCH || 0) + runningCounts[p.id].BENCH;
+            return {
+              id: p.id,
+              idx,
+              satPrev,
+              gameBench: runningCounts[p.id].BENCH,
+              totalBench
+            };
+          });
+
+          candidates.sort((a, b) => {
+            if (a.satPrev !== b.satPrev) return a.satPrev ? 1 : -1;
+            if (a.totalBench !== b.totalBench) return a.totalBench - b.totalBench;
+            if (a.gameBench !== b.gameBench) return a.gameBench - b.gameBench;
+            return a.idx - b.idx;
+          });
+
+          benchIds = candidates.slice(0, numSitting).map(c => c.id);
+        }
+
+        const fieldPlayers = presentPlayers.filter(p => !benchIds.includes(p.id));
+        const needsPositionAssignment = fieldPlayers.some(p => !posMap[p.id]);
+        if (needsPositionAssignment) {
+          posMap = assignFairPositions(fieldPlayers, runningCounts, prevShift, posMap);
+        }
+
+        presentPlayers.forEach(p => {
+          if (benchIds.includes(p.id)) {
+            runningCounts[p.id].BENCH++;
+          } else {
+            const assignedPos = posMap[p.id] || 'MID';
+            runningCounts[p.id][assignedPos] = (runningCounts[p.id][assignedPos] || 0) + 1;
+          }
+        });
+
+        shifts.push({
+          index: s,
+          quarter,
+          part,
+          benchIds,
+          positions: posMap,
+          locked: isLocked
+        });
+      }
+
+      state.computedShifts = shifts;
+      saveState();
     }
 
-    function renderTimerUI() {
-      const q = appState.timer.quarter;
-      const rem = appState.timer.remainingSeconds;
-      const isSecondHalf = rem <= 240;
-      const activeShiftIdx = getActiveShiftIndex();
-      const activeShift = appState.shifts[activeShiftIdx];
-      const nextShift = activeShiftIdx < 7 ? appState.shifts[activeShiftIdx + 1] : null;
+    function assignFairPositions(fieldPlayers, runningCounts, prevShift, existingPosMap = {}) {
+      const result = {};
+      const unassigned = [];
 
-      // Quarter pill styles
-      for (let i = 1; i <= 4; i++) {
-        const btn = document.getElementById(`qtrBtn${i}`);
-        if (i === q) {
-          btn.className = 'qtr-pill px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950 shadow-xs transition';
+      const remainingSlots = {
+        GK: state.slots.GK || 0,
+        DEF: state.slots.DEF || 0,
+        MID: state.slots.MID || 0,
+        FWD: state.slots.FWD || 0
+      };
+
+      fieldPlayers.forEach(p => {
+        const lockedPos = existingPosMap[p.id];
+        if (lockedPos && remainingSlots[lockedPos] > 0) {
+          result[p.id] = lockedPos;
+          remainingSlots[lockedPos]--;
         } else {
-          btn.className = 'qtr-pill px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 transition';
+          unassigned.push(p);
         }
+      });
+
+      const slotPool = [];
+      ['GK', 'FWD', 'DEF', 'MID'].forEach(zone => {
+        for (let i = 0; i < (remainingSlots[zone] || 0); i++) {
+          slotPool.push(zone);
+        }
+      });
+
+      while (slotPool.length < unassigned.length) {
+        slotPool.push('MID');
       }
 
-      // Mute button state
-      const muteIcon = document.getElementById('muteIcon');
-      const muteLabel = document.getElementById('muteLabel');
-      if (appState.timer.muted) {
-        muteIcon.className = 'fa-solid fa-volume-xmark text-rose-400';
-        muteLabel.textContent = 'Muted';
+      const usedPlayers = new Set();
+
+      slotPool.slice(0, unassigned.length).forEach(zone => {
+        let bestPlayer = null;
+        let bestScore = Infinity;
+
+        unassigned.forEach((p, idx) => {
+          if (usedPlayers.has(p.id)) return;
+          const totalInZone = (p.prior[zone] || 0) + (runningCounts[p.id][zone] || 0);
+          const gameInZone = runningCounts[p.id][zone] || 0;
+          const prevPos = prevShift && prevShift.positions ? prevShift.positions[p.id] : null;
+          const repeatPenalty = prevPos === zone ? 2.5 : 0;
+
+          const score = (totalInZone * 10) + (gameInZone * 4) + (repeatPenalty * 10) + (idx * 0.01);
+          if (score < bestScore) {
+            bestScore = score;
+            bestPlayer = p;
+          }
+        });
+
+        if (bestPlayer) {
+          result[bestPlayer.id] = zone;
+          usedPlayers.add(bestPlayer.id);
+        }
+      });
+
+      return result;
+    }
+
+    // =========================================================================
+    // UI RENDERING
+    // =========================================================================
+    function renderAll() {
+      renderTabsAndOnboarding();
+      renderHeaderAndSettings();
+      renderScoreboard();
+      renderAttendance();
+      renderScheduleGrid();
+      renderBalanceTable();
+      renderSmsBubbles();
+      renderTimerUI();
+      renderStatsAndHistoryTab();
+    }
+
+    function switchMainTab(tab) {
+      state.activeTab = tab;
+      saveState();
+      renderTabsAndOnboarding();
+      if (tab === 'stats') renderStatsAndHistoryTab();
+    }
+
+    function renderTabsAndOnboarding() {
+      const isGame = state.activeTab === 'game';
+      document.getElementById('viewGame').classList.toggle('hidden', !isGame);
+      document.getElementById('viewStats').classList.toggle('hidden', isGame);
+
+      document.getElementById('tabBtnGame').className = isGame
+        ? 'py-1.5 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950 shadow'
+        : 'py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white';
+      document.getElementById('tabBtnStats').className = !isGame
+        ? 'py-1.5 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950 shadow'
+        : 'py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white';
+
+      // Show Onboarding Card whenever roster is empty
+      const onboarding = document.getElementById('onboardingCard');
+      if (state.players.length === 0) {
+        onboarding.classList.remove('hidden');
+        document.getElementById('onboardTeamNameInput').value = state.teamName === 'My Team' ? '' : state.teamName;
+        document.getElementById('onboardFormatSelect').value = state.formationKey;
       } else {
-        muteIcon.className = 'fa-solid fa-volume-high text-emerald-400';
-        muteLabel.textContent = 'Sound On';
-      }
-
-      // Clock digits & shift badge
-      document.getElementById('timerDisplay').textContent = formatMMSS(rem);
-      document.getElementById('activeShiftLabel').innerHTML = `
-        <span class="w-1.5 h-1.5 rounded-full ${isSecondHalf ? 'bg-amber-400' : 'bg-emerald-400'}"></span>
-        <span>Q${q} • ${isSecondHalf ? '2nd 4m Shift (4:00–0:00)' : '1st 4m Shift (8:00–4:00)'}</span>
-      `;
-
-      // Start/Pause button
-      const spBtn = document.getElementById('startPauseBtn');
-      const spIcon = document.getElementById('startPauseIcon');
-      const spText = document.getElementById('startPauseText');
-      if (appState.timer.running) {
-        spBtn.className = 'flex-1 sm:flex-initial sm:min-w-[140px] py-3.5 px-5 rounded-xl font-extrabold text-sm uppercase tracking-wider shadow-md transition active:scale-95 flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-950';
-        spIcon.className = 'fa-solid fa-pause';
-        spText.textContent = 'Pause';
-      } else {
-        spBtn.className = 'flex-1 sm:flex-initial sm:min-w-[140px] py-3.5 px-5 rounded-xl font-extrabold text-sm uppercase tracking-wider shadow-md transition active:scale-95 flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950';
-        spIcon.className = 'fa-solid fa-play';
-        spText.textContent = rem < 480 && rem > 0 ? 'Resume' : `Start Q${q}`;
-      }
-
-      // Dual Progress Bars
-      const firstHalfElapsed = Math.min(240, Math.max(0, 480 - rem));
-      const secondHalfElapsed = Math.min(240, Math.max(0, 240 - rem));
-      document.getElementById('progressBarFirstHalf').style.width = `${(firstHalfElapsed / 240) * 100}%`;
-      document.getElementById('progressBarSecondHalf').style.width = `${(secondHalfElapsed / 240) * 100}%`;
-
-      // Current Bench & Next Sub Strip
-      document.getElementById('liveBenchNowText').textContent = formatPlayerNamesList(activeShift.benchIds, 'None (All Playing)');
-      const nextSubHeaderLabel = document.getElementById('nextSubHeaderLabel');
-      const liveBenchNextText = document.getElementById('liveBenchNextText');
-      const nextSubInText = document.getElementById('nextSubInText');
-
-      if (nextShift) {
-        nextSubHeaderLabel.textContent = isSecondHalf ? `Next Qtr Start (Q${q + 1} • 1st 4m)` : `Next Sub (Q${q} • 2nd 4m at 4:00)`;
-        liveBenchNextText.textContent = formatPlayerNamesList(nextShift.benchIds, 'None');
-        const comingInIds = activeShift.benchIds.filter(id => !nextShift.benchIds.includes(id));
-        nextSubInText.textContent = `In: ${formatPlayerNamesList(comingInIds, 'Same')}`;
-      } else {
-        nextSubHeaderLabel.textContent = 'Final Shift of Game';
-        liveBenchNextText.textContent = 'End of Q4 next';
-        nextSubInText.textContent = 'Finish Game';
-      }
-
-      // Flashing Sub Alert Banner
-      const alertBanner = document.getElementById('subAlertBanner');
-      if (appState.timer.activeAlertType === 'mid') {
-        const s1 = appState.shifts[(q - 1) * 2];
-        const s2 = appState.shifts[(q - 1) * 2 + 1];
-        const comingIn = s1.benchIds.filter(id => !s2.benchIds.includes(id));
-        document.getElementById('alertBannerTitle').textContent = `Q${q} MID-QUARTER SUB (4:00)`;
-        document.getElementById('alertComingInNames').textContent = formatPlayerNamesList(comingIn, 'No change');
-        document.getElementById('alertGoingOutNames').textContent = formatPlayerNamesList(s2.benchIds, 'None');
-        document.getElementById('alertConfirmBtnText').textContent = `Confirm Sub & Lock 1st 4m`;
-        alertBanner.classList.remove('hidden');
-      } else if (appState.timer.activeAlertType === 'end') {
-        const s2 = appState.shifts[(q - 1) * 2 + 1];
-        const nextQShift = q < 4 ? appState.shifts[q * 2] : null;
-        document.getElementById('alertBannerTitle').textContent = `END OF QUARTER ${q} (0:00)`;
-        document.getElementById('alertComingInNames').textContent = formatPlayerNamesList(s2.benchIds, 'All');
-        document.getElementById('alertGoingOutNames').textContent = nextQShift
-          ? `${formatPlayerNamesList(nextQShift.benchIds, 'None')} (for Q${q + 1})`
-          : 'Game Complete!';
-        document.getElementById('alertConfirmBtnText').textContent = q < 4 ? `Lock Q${q} & Start Q${q + 1}` : 'Lock Q4 & Finish';
-        alertBanner.classList.remove('hidden');
-      } else {
-        alertBanner.classList.add('hidden');
+        onboarding.classList.add('hidden');
       }
     }
 
-    function renderAttendanceAndRosterUI() {
-      const presentCount = appState.players.filter(p => p.present).length;
-      const totalCount = appState.players.length;
-      const benchCount = Math.max(0, presentCount - appState.fieldSize);
+    function renderHeaderAndSettings() {
+      document.getElementById('headerTeamName').textContent = state.teamName || 'Soccer Sideline Manager';
+      document.getElementById('teamNameInput').value = state.teamName || '';
 
-      document.getElementById('presentCountBadge').textContent = `${presentCount}/${totalCount} Present`;
-      document.getElementById('fieldSizeDisplay').textContent = appState.fieldSize;
-      document.getElementById('benchPerShiftInfo').innerHTML =
-        `Sitting per 4m shift: <strong class="text-slate-900">${benchCount} ${benchCount === 1 ? 'girl' : 'girls'}</strong>`;
+      const preset = FORMATION_PRESETS[state.formationKey];
+      const formLabel = preset ? preset.label : `${getTotalFieldSlots()}v${getTotalFieldSlots()}`;
+      document.getElementById('formatSummaryLabel').textContent = `${formLabel} • ${state.quarterMins}m Qtrs`;
 
-      // Mode buttons
-      const modeSeasonBtn = document.getElementById('modeSeasonBtn');
-      const modeTodayBtn = document.getElementById('modeTodayBtn');
-      if (appState.balanceMode === 'season') {
-        modeSeasonBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-600 text-white shadow-xs transition';
-        modeTodayBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition';
+      const posBtn = document.getElementById('posToggleBtn');
+      if (state.trackPositions) {
+        posBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+        posBtn.innerHTML = '<span>📍 Pos: ON</span>';
       } else {
-        modeTodayBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-600 text-white shadow-xs transition';
-        modeSeasonBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition';
+        posBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1 bg-slate-800 text-slate-400 border-slate-700';
+        posBtn.innerHTML = '<span>📍 Pos: OFF</span>';
       }
 
-      // Attendance Chips
-      const todayCounts = getTodaySitCounts();
-      const chipsContainer = document.getElementById('attendanceChipsContainer');
-      chipsContainer.innerHTML = appState.players.map(p => {
-        const todaySit = todayCounts[p.id] || 0;
-        if (p.present) {
-          return `
-            <button onclick="togglePlayerAttendance('${p.id}')"
-              class="flex items-center justify-between px-3 py-2.5 rounded-xl border-2 border-emerald-500/80 bg-emerald-50/70 hover:bg-emerald-100/70 active:scale-98 transition text-left">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px] shrink-0">
-                  <i class="fa-solid fa-check"></i>
-                </span>
-                <span class="font-extrabold text-sm text-slate-900 truncate">${p.name}</span>
-              </div>
-              <span class="text-[11px] font-bold px-1.5 py-0.5 rounded bg-white text-emerald-800 border border-emerald-200 shrink-0">
-                Out ${todaySit}x
-              </span>
-            </button>
-          `;
-        } else {
-          return `
-            <button onclick="togglePlayerAttendance('${p.id}')"
-              class="flex items-center justify-between px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-100/80 hover:bg-slate-200/70 active:scale-98 transition text-left opacity-70">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="w-5 h-5 rounded-full bg-slate-300 text-slate-600 flex items-center justify-center text-[11px] shrink-0">
-                  <i class="fa-solid fa-xmark"></i>
-                </span>
-                <span class="font-bold text-sm text-slate-500 line-through truncate">${p.name}</span>
-              </div>
-              <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 shrink-0">
-                Absent
-              </span>
-            </button>
-          `;
-        }
-      }).join('');
+      document.getElementById('formationPresetSelect').value = state.formationKey;
+      document.getElementById('quarterMinsSelect').value = String(state.quarterMins);
+      document.getElementById('shiftsPerQtrSelect').value = String(state.shiftsPerQuarter);
 
-      // Roster Drawer List
-      const editorList = document.getElementById('rosterEditorList');
-      editorList.innerHTML = appState.players.map(p => `
-        <div class="px-3 py-2 flex items-center justify-between gap-2 text-xs">
-          <div class="flex items-center gap-2">
-            <span class="font-bold text-slate-800">${p.name}</span>
-            ${!p.present ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">Absent Today</span>' : ''}
+      document.getElementById('slotCountFWD').textContent = state.slots.FWD;
+      document.getElementById('slotCountMID').textContent = state.slots.MID;
+      document.getElementById('slotCountDEF').textContent = state.slots.DEF;
+      document.getElementById('slotCountGK').textContent = state.slots.GK;
+      document.getElementById('totalFieldSlotsLabel').textContent = getTotalFieldSlots();
+
+      const rosterEl = document.getElementById('rosterHistoryList');
+      if (state.players.length === 0) {
+        rosterEl.innerHTML = `<div class="text-xs text-slate-500 italic py-2 text-center">No players added yet. Use the form above to add your roster.</div>`;
+        return;
+      }
+
+      rosterEl.innerHTML = state.players.map(p => `
+        <div class="flex items-center justify-between bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs gap-2">
+          <div class="flex items-center gap-2 flex-1 min-w-0">
+            <input type="text" value="${escapeHtml(p.number || '')}" placeholder="#" maxlength="3"
+              onchange="updatePlayerNumber('${p.id}', this.value)"
+              class="w-11 bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-center font-bold text-emerald-300 text-xs" />
+            <input type="text" value="${escapeHtml(p.name)}"
+              onchange="updatePlayerName('${p.id}', this.value)"
+              class="flex-1 min-w-0 bg-transparent border-b border-transparent focus:border-emerald-500 font-bold text-white text-xs focus:outline-none" />
           </div>
-          <div class="flex items-center gap-3">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[11px] text-slate-500">Prior Shifts:</span>
-              <button onclick="adjustPriorShifts('${p.id}', -1)" class="w-6 h-6 rounded-lg bg-white border border-slate-300 font-bold text-slate-700 hover:bg-slate-100">-</button>
-              <span class="w-5 text-center font-mono font-bold text-slate-900">${p.priorShifts}</span>
-              <button onclick="adjustPriorShifts('${p.id}', 1)" class="w-6 h-6 rounded-lg bg-white border border-slate-300 font-bold text-slate-700 hover:bg-slate-100">+</button>
-            </div>
-            <button onclick="removePlayer('${p.id}')" class="text-slate-400 hover:text-rose-600 p-1" title="Remove player">
-              <i class="fa-solid fa-trash-can"></i>
-            </button>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="text-[11px] text-slate-400">Prior Bench:</span>
+            <button onclick="adjustPrior('${p.id}', 'BENCH', -1)" class="w-5 h-5 rounded bg-slate-800 font-bold">-</button>
+            <span class="mono font-bold text-amber-300 w-4 text-center">${p.prior.BENCH || 0}</span>
+            <button onclick="adjustPrior('${p.id}', 'BENCH', 1)" class="w-5 h-5 rounded bg-slate-800 font-bold">+</button>
+            <button onclick="removePlayer('${p.id}')" class="ml-1 text-slate-500 hover:text-rose-400" title="Remove">🗑️</button>
           </div>
         </div>
       `).join('');
     }
 
-    function renderScheduleUI() {
-      const activeShiftIdx = getActiveShiftIndex();
-      const container = document.getElementById('quartersScheduleContainer');
-      const presentIds = appState.players.filter(p => p.present).map(p => p.id);
+    // =========================================================================
+    // LIVE SCOREBOARD & GOAL LOGGING
+    // =========================================================================
+    function renderScoreboard() {
+      document.getElementById('scoreTeamLabel').textContent = state.teamName || 'My Team';
+      document.getElementById('scoreOpponentLabel').textContent = state.currentMatch.opponent || 'Opponent';
+      document.getElementById('opponentNameInput').value = state.currentMatch.opponent === 'Opponent' ? '' : state.currentMatch.opponent;
+      document.getElementById('ourScoreDisplay').textContent = state.currentMatch.ourScore;
+      document.getElementById('oppScoreDisplay').textContent = state.currentMatch.oppScore;
+
+      const goals = state.currentMatch.goals || [];
+      const container = document.getElementById('currentGameGoalsContainer');
+      const list = document.getElementById('currentGameGoalsList');
+
+      if (goals.length === 0) {
+        container.classList.add('hidden');
+        list.innerHTML = '';
+        return;
+      }
+
+      container.classList.remove('hidden');
+      list.innerHTML = goals.map(g => {
+        const scorerName = getPlayerDisplayById(g.scorerId);
+        const assistName = g.assistId ? getPlayerDisplayById(g.assistId) : null;
+        return `
+          <div class="flex items-center justify-between bg-slate-950/80 border border-slate-800/80 rounded-lg px-2.5 py-1.5 text-xs">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="mono text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                Q${g.quarter} (${g.clock})
+              </span>
+              <span class="font-bold text-white">⚽ ${escapeHtml(scorerName)}</span>
+              ${assistName ? `<span class="text-slate-400">• 👟 Ast: <strong class="text-blue-300">${escapeHtml(assistName)}</strong></span>` : `<span class="text-slate-500 italic">(Unassisted)</span>`}
+            </div>
+            <button onclick="removeGoal('${g.id}')" class="text-slate-500 hover:text-rose-400 text-xs px-1.5" title="Undo Goal">✕</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateTeamName(val) {
+      state.teamName = (val || '').trim() || 'My Team';
+      saveState();
+      renderAll();
+    }
+
+    function updateOpponentName(val) {
+      state.currentMatch.opponent = (val || '').trim() || 'Opponent';
+      saveState();
+      renderScoreboard();
+    }
+
+    function adjustOpponentScore(delta) {
+      state.currentMatch.oppScore = Math.max(0, (state.currentMatch.oppScore || 0) + delta);
+      saveState();
+      renderScoreboard();
+    }
+
+    function openGoalModal() {
+      const presentPlayers = state.players.filter(p => p.present);
+      goalDraft = {
+        scorerId: presentPlayers.length > 0 ? presentPlayers[0].id : 'OWN_GOAL',
+        assistId: null
+      };
+      document.getElementById('goalModal').classList.remove('hidden');
+      renderGoalModalChips();
+    }
+
+    function closeGoalModal() {
+      document.getElementById('goalModal').classList.add('hidden');
+    }
+
+    function renderGoalModalChips() {
+      const presentPlayers = state.players.filter(p => p.present);
+      const scorerEl = document.getElementById('goalScorerChips');
+      const assistEl = document.getElementById('goalAssistChips');
+
+      const scorerOptions = [
+        ...presentPlayers.map(p => ({ id: p.id, label: formatPlayerBadge(p) })),
+        { id: 'OWN_GOAL', label: 'Own Goal / Team' }
+      ];
+
+      scorerEl.innerHTML = scorerOptions.map(opt => {
+        const active = goalDraft.scorerId === opt.id;
+        return `
+          <button onclick="selectGoalScorer('${opt.id}')"
+            class="px-3 py-2 rounded-xl text-xs font-bold border text-left truncate transition ${
+              active
+                ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow'
+                : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+            }">
+            ⚽ ${escapeHtml(opt.label)}
+          </button>
+        `;
+      }).join('');
+
+      const assistOptions = [
+        { id: null, label: 'Unassisted' },
+        ...presentPlayers
+          .filter(p => p.id !== goalDraft.scorerId)
+          .map(p => ({ id: p.id, label: formatPlayerBadge(p) }))
+      ];
+
+      assistEl.innerHTML = assistOptions.map(opt => {
+        const active = goalDraft.assistId === opt.id;
+        return `
+          <button onclick="selectGoalAssist(${opt.id ? `'${opt.id}'` : 'null'})"
+            class="px-3 py-2 rounded-xl text-xs font-bold border text-left truncate transition ${
+              active
+                ? 'bg-blue-500 text-slate-950 border-blue-400 shadow'
+                : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+            }">
+            ${opt.id ? '👟 ' : ''}${escapeHtml(opt.label)}
+          </button>
+        `;
+      }).join('');
+    }
+
+    function selectGoalScorer(id) {
+      goalDraft.scorerId = id;
+      if (goalDraft.assistId === id) goalDraft.assistId = null;
+      renderGoalModalChips();
+    }
+
+    function selectGoalAssist(id) {
+      goalDraft.assistId = id;
+      renderGoalModalChips();
+    }
+
+    function confirmGoalLog() {
+      const mins = Math.floor(timer.secondsLeft / 60);
+      const secs = timer.secondsLeft % 60;
+      const clockStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+      state.currentMatch.ourScore = (state.currentMatch.ourScore || 0) + 1;
+      state.currentMatch.goals.push({
+        id: 'g_' + Date.now(),
+        quarter: timer.quarter,
+        clock: clockStr,
+        scorerId: goalDraft.scorerId,
+        assistId: goalDraft.assistId
+      });
+
+      closeGoalModal();
+      saveState();
+      renderScoreboard();
+    }
+
+    function removeGoal(goalId) {
+      const idx = state.currentMatch.goals.findIndex(g => g.id === goalId);
+      if (idx >= 0) {
+        state.currentMatch.goals.splice(idx, 1);
+        state.currentMatch.ourScore = Math.max(0, state.currentMatch.ourScore - 1);
+        saveState();
+        renderScoreboard();
+      }
+    }
+
+    // =========================================================================
+    // ATTENDANCE, SCHEDULE & BALANCE TABLE RENDERING
+    // =========================================================================
+    function renderAttendance() {
+      const presentCount = state.players.filter(p => p.present).length;
+      const fieldSlots = getTotalFieldSlots();
+      const sittingCount = Math.max(0, presentCount - fieldSlots);
+
+      document.getElementById('attendanceSubtext').textContent =
+        `${presentCount} present • ${fieldSlots} on field • ${sittingCount} sitting per shift`;
+
+      const container = document.getElementById('attendanceChips');
+      if (state.players.length === 0) {
+        container.innerHTML = `<span class="text-xs text-slate-500 italic">Add players above to begin roll call.</span>`;
+        return;
+      }
+
+      container.innerHTML = state.players.map(p => {
+        const badge = formatPlayerBadge(p);
+        if (p.present) {
+          return `
+            <button onclick="togglePlayerPresence('${p.id}')"
+              class="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm transition active:scale-95">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>${escapeHtml(badge)}</span>
+            </button>
+          `;
+        } else {
+          return `
+            <button onclick="togglePlayerPresence('${p.id}')"
+              class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/70 text-slate-500 border border-slate-800 line-through flex items-center gap-1.5 transition active:scale-95">
+              <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+              <span>${escapeHtml(badge)}</span>
+            </button>
+          `;
+        }
+      }).join('');
+    }
+
+    function renderScheduleGrid() {
+      const grid = document.getElementById('scheduleGrid');
+      const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
+      const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
 
       let html = '';
       for (let q = 1; q <= 4; q++) {
-        const s1 = appState.shifts[(q - 1) * 2];
-        const s2 = appState.shifts[(q - 1) * 2 + 1];
-        const isCurrentQtr = appState.timer.quarter === q;
-
-        // Check if both halves have the exact same bench
-        const isFullEightMin = s1.benchIds.length > 0 &&
-          s1.benchIds.length === s2.benchIds.length &&
-          s1.benchIds.every(id => s2.benchIds.includes(id)) &&
-          s1.locked && s2.locked;
+        const qShifts = state.computedShifts.filter(s => s.quarter === q);
+        const isFullQtr = state.fullQuarterLocks[q];
 
         html += `
-          <div class="rounded-2xl border ${isCurrentQtr ? 'border-emerald-500 ring-2 ring-emerald-500/15' : 'border-slate-200'} bg-slate-50/60 overflow-hidden flex flex-col">
-            <!-- Quarter Header -->
-            <div class="px-3.5 py-2.5 ${isCurrentQtr ? 'bg-emerald-900 text-white' : 'bg-slate-100 text-slate-800'} flex items-center justify-between gap-2 border-b ${isCurrentQtr ? 'border-emerald-800' : 'border-slate-200'}">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 shadow-lg">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
               <div class="flex items-center gap-2">
-                <span class="font-extrabold text-sm">Quarter ${q}</span>
-                ${isCurrentQtr ? '<span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-400 text-slate-950">Active Qtr</span>' : ''}
+                <span class="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-extrabold text-xs">Quarter ${q}</span>
+                <span class="text-[11px] text-slate-400">${state.quarterMins} mins</span>
               </div>
-              <button onclick="makeQuarterFullEightMin(${q})"
-                class="text-[11px] font-bold px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
-                  isFullEightMin
-                    ? 'bg-amber-400 text-slate-950 font-extrabold'
-                    : isCurrentQtr
-                      ? 'bg-emerald-800 hover:bg-emerald-700 text-emerald-100 border border-emerald-700'
-                      : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-300'
-                }"
-                title="Copy 1st half subs to 2nd half for an 8-minute shift & rebalance future quarters">
-                <i class="fa-solid fa-arrows-left-right-to-line"></i>
-                <span>${isFullEightMin ? '8m Full Qtr Locked' : 'Full 8m Qtr (No Mid-Sub)'}</span>
-              </button>
+              ${state.shiftsPerQuarter === 2 ? `
+                <button onclick="toggleFullQuarter(${q})"
+                  class="px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${
+                    isFullQtr
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                  }">
+                  ${isFullQtr ? '🔒 Full Qtr' : 'Full Qtr (No Mid-Sub)'}
+                </button>
+              ` : ''}
             </div>
 
-            <!-- Two 4-Min Shifts inside Quarter -->
-            <div class="p-3 space-y-2.5 flex-1 flex flex-col justify-between">
-              ${[s1, s2].map(shift => {
-                const isNow = shift.index === activeShiftIdx;
-                const onFieldIds = presentIds.filter(id => !shift.benchIds.includes(id));
+            <div class="space-y-2">
+              ${qShifts.map(shift => {
+                const benchNames = shift.benchIds.map(id => playerMap[id] || '').filter(Boolean);
+                const shiftLabel = state.shiftsPerQuarter === 2
+                  ? (shift.part === 1 ? `1st ${shiftMins}m` : `2nd ${shiftMins}m`)
+                  : `Full ${state.quarterMins}m`;
+
+                const posGroups = { FWD: [], MID: [], DEF: [], GK: [] };
+                Object.entries(shift.positions || {}).forEach(([pid, pos]) => {
+                  if (!shift.benchIds.includes(pid) && playerMap[pid]) {
+                    if (!posGroups[pos]) posGroups[pos] = [];
+                    posGroups[pos].push(playerMap[pid]);
+                  }
+                });
+
                 return `
-                  <div class="rounded-xl p-3 border transition ${
-                    isNow
-                      ? 'bg-white border-emerald-500 shadow-xs'
-                      : shift.locked
-                        ? 'bg-slate-100/90 border-slate-300'
-                        : 'bg-white border-slate-200'
-                  }">
-                    <div class="flex items-center justify-between gap-2 mb-2">
+                  <div onclick="openEditModal(${shift.index})"
+                    class="group cursor-pointer rounded-xl p-2.5 border transition ${
+                      shift.locked
+                        ? 'bg-amber-500/10 border-amber-500/40'
+                        : 'bg-slate-950/60 border-slate-800/90 hover:border-slate-700'
+                    }">
+                    <div class="flex items-center justify-between mb-1.5">
                       <div class="flex items-center gap-1.5">
-                        <span class="text-xs font-extrabold ${isNow ? 'text-emerald-700' : 'text-slate-700'}">
-                          ${shift.half === 1 ? '1st 4m (8:00–4:00)' : '2nd 4m (4:00–0:00)'}
-                        </span>
-                        ${isNow ? '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>' : ''}
-                        ${shift.isOverride ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900">Edited</span>' : ''}
+                        <span class="text-xs font-bold text-slate-300">${shiftLabel}</span>
+                        ${shift.locked ? `<span class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">LOCKED</span>` : ''}
                       </div>
-
-                      <div class="flex items-center gap-1">
-                        <button onclick="openShiftEditor(${shift.index})"
-                          class="text-[11px] font-bold px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1">
-                          <i class="fa-solid fa-user-pen text-[10px]"></i>
-                          <span>Edit Actual</span>
-                        </button>
-                        <button onclick="toggleShiftLock(${shift.index})"
-                          class="text-[11px] font-bold px-2 py-1 rounded-lg border transition flex items-center gap-1 ${
-                            shift.locked
-                              ? 'bg-slate-800 text-white border-slate-800'
-                              : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-100'
-                          }"
-                          title="${shift.locked ? 'Shift locked. Tap to unlock.' : 'Tap to lock this shift'}">
-                          <i class="fa-solid ${shift.locked ? 'fa-lock text-amber-300' : 'fa-lock-open'} text-[10px]"></i>
-                          <span>${shift.locked ? 'Locked' : 'Auto'}</span>
-                        </button>
-                      </div>
+                      <span class="text-[11px] text-emerald-400 group-hover:underline font-medium">✏️ Edit Actual</span>
                     </div>
 
-                    <!-- Bench Pills -->
-                    <div class="flex items-center justify-between gap-2 bg-amber-50/90 border border-amber-200/80 rounded-lg px-2.5 py-2">
-                      <div class="flex items-center gap-1.5 flex-wrap">
-                        <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 mr-1">
-                          <i class="fa-solid fa-chair mr-0.5"></i>Out:
-                        </span>
-                        ${
-                          shift.benchIds.length === 0
-                            ? '<span class="text-xs font-bold text-emerald-700">None (All Play!)</span>'
-                            : shift.benchIds.map(id => `
-                                <span onclick="openShiftEditor(${shift.index})" class="cursor-pointer inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-amber-400/90 text-slate-950 shadow-2xs hover:bg-amber-400">
-                                  ${getPlayerName(id)}
-                                </span>
-                              `).join('')
-                        }
-                      </div>
-                      <span class="text-[10px] font-semibold text-amber-900/70 shrink-0">4 min</span>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">🪑 Out:</span>
+                      ${benchNames.length > 0
+                        ? benchNames.map(n => `<span class="px-2 py-0.5 rounded-md text-xs font-bold pos-BENCH">${escapeHtml(n)}</span>`).join('')
+                        : `<span class="text-xs text-slate-500 italic">None (All Play)</span>`
+                      }
                     </div>
 
-                    <!-- On Field Subtle Line -->
-                    <div class="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500 truncate">
-                      <span class="font-semibold text-slate-400">Field (${onFieldIds.length}):</span>
-                      <span class="truncate">${onFieldIds.map(getPlayerName).join(', ')}</span>
-                    </div>
+                    ${state.trackPositions ? `
+                      <div class="mt-2 pt-2 border-t border-slate-800/70 grid grid-cols-2 gap-1.5 text-[11px]">
+                        ${posGroups.FWD.length ? `
+                          <div class="flex items-center gap-1 flex-wrap">
+                            <span class="font-bold text-rose-400">⚔️ FWD:</span>
+                            <span class="text-slate-200 font-medium">${posGroups.FWD.map(escapeHtml).join(', ')}</span>
+                          </div>
+                        ` : ''}
+                        ${posGroups.MID.length ? `
+                          <div class="flex items-center gap-1 flex-wrap">
+                            <span class="font-bold text-blue-400">⚡ MID:</span>
+                            <span class="text-slate-200 font-medium">${posGroups.MID.map(escapeHtml).join(', ')}</span>
+                          </div>
+                        ` : ''}
+                        ${posGroups.DEF.length ? `
+                          <div class="flex items-center gap-1 flex-wrap">
+                            <span class="font-bold text-emerald-400">🛡️ DEF:</span>
+                            <span class="text-slate-200 font-medium">${posGroups.DEF.map(escapeHtml).join(', ')}</span>
+                          </div>
+                        ` : ''}
+                        ${posGroups.GK.length ? `
+                          <div class="flex items-center gap-1 flex-wrap">
+                            <span class="font-bold text-amber-400">🧤 GK:</span>
+                            <span class="text-slate-200 font-medium">${posGroups.GK.map(escapeHtml).join(', ')}</span>
+                          </div>
+                        ` : ''}
+                      </div>
+                    ` : ''}
                   </div>
                 `;
               }).join('')}
@@ -1757,124 +1286,788 @@
           </div>
         `;
       }
-      container.innerHTML = html;
+      grid.innerHTML = html;
     }
 
-    function renderFairnessTable() {
-      const todayCounts = getTodaySitCounts();
-      const tbody = document.getElementById('fairnessTableBody');
+    function renderBalanceTable() {
+      const tbody = document.getElementById('balanceTableBody');
+      const totalShifts = getTotalShiftsCount();
+      const showGkCol = (state.slots.GK || 0) > 0;
 
-      // Sort by present first, then roster order
-      const sorted = [...appState.players].sort((a, b) => {
-        if (a.present !== b.present) return a.present ? -1 : 1;
-        return a.orderIndex - b.orderIndex;
+      document.getElementById('gkHeaderCell').style.display = (state.trackPositions && showGkCol) ? '' : 'none';
+      document.querySelectorAll('.pos-col').forEach(el => {
+        if (el.id !== 'gkHeaderCell') {
+          el.style.display = state.trackPositions ? '' : 'none';
+        }
       });
 
-      tbody.innerHTML = sorted.map(p => {
-        const satShifts = todayCounts[p.id] || 0;
-        const satMins = satShifts * 4;
-        const playMins = p.present ? Math.max(0, 32 - satMins) : 0;
-        const seasonTotal = p.priorShifts + satShifts;
+      const presentPlayers = state.players.filter(p => p.present);
+      if (presentPlayers.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-3 text-center text-slate-500 italic">No active players yet.</td></tr>`;
+        return;
+      }
 
-        // Check if this player accidentally has any back-to-back sit-outs (e.g., from an 8-min quarter override)
-        let hasBackToBack = false;
-        for (let s = 1; s < 8; s++) {
-          if (appState.shifts[s].benchIds.includes(p.id) && appState.shifts[s - 1].benchIds.includes(p.id)) {
-            hasBackToBack = true;
-            break;
+      tbody.innerHTML = presentPlayers.map(p => {
+        const counts = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0 };
+        state.computedShifts.forEach(s => {
+          if (s.benchIds.includes(p.id)) {
+            counts.BENCH++;
+          } else {
+            const pos = s.positions[p.id] || 'MID';
+            counts[pos] = (counts[pos] || 0) + 1;
           }
-        }
+        });
+
+        const playedShifts = totalShifts - counts.BENCH;
+        const playPct = totalShifts > 0 ? Math.round((playedShifts / totalShifts) * 100) : 100;
+
+        const fmtCell = (zone) => {
+          const today = counts[zone] || 0;
+          const season = today + (p.prior[zone] || 0);
+          return p.prior[zone]
+            ? `<span class="font-bold text-white">${today}</span> <span class="text-slate-500">(${season})</span>`
+            : `<span class="font-bold text-white">${today}</span>`;
+        };
 
         return `
-          <tr class="${!p.present ? 'opacity-50 bg-slate-50' : 'hover:bg-slate-50/80'}">
-            <td class="py-2.5 pr-2 font-extrabold text-slate-900 flex items-center gap-2">
-              <span>${p.name}</span>
-              ${!p.present ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">Absent</span>' : ''}
-              ${hasBackToBack ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800" title="Sitting 8 consecutive mins">8m stretch</span>' : ''}
-            </td>
-            <td class="py-2.5 px-2 text-center">
-              <span class="inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded-full text-xs ${
-                satShifts >= 3
-                  ? 'bg-amber-100 text-amber-900'
-                  : satShifts === 2
-                    ? 'bg-slate-100 text-slate-800'
-                    : 'bg-emerald-100 text-emerald-800'
-              }">
-                ${satShifts}x (${satMins}m)
-              </span>
-            </td>
-            <td class="py-2.5 px-2 text-center font-semibold text-emerald-700">
-              ${p.present ? `${playMins}m` : '—'}
-            </td>
-            <td class="py-2.5 px-2 text-center font-mono text-slate-600">
-              ${p.priorShifts}
-            </td>
-            <td class="py-2.5 pl-2 text-right font-mono font-extrabold text-slate-900">
-              ${seasonTotal} shifts
-            </td>
+          <tr>
+            <td class="py-2 pr-2 font-bold text-white">${escapeHtml(formatPlayerBadge(p))}</td>
+            <td class="py-2 px-2 text-center mono">${fmtCell('BENCH')}</td>
+            ${state.trackPositions ? `
+              <td class="py-2 px-2 text-center mono text-rose-300">${fmtCell('FWD')}</td>
+              <td class="py-2 px-2 text-center mono text-blue-300">${fmtCell('MID')}</td>
+              <td class="py-2 px-2 text-center mono text-emerald-300">${fmtCell('DEF')}</td>
+              ${showGkCol ? `<td class="py-2 px-2 text-center mono text-amber-300">${fmtCell('GK')}</td>` : ''}
+            ` : ''}
+            <td class="py-2 pl-2 text-right mono font-bold text-emerald-400">${playPct}%</td>
           </tr>
         `;
       }).join('');
     }
 
-    function renderSmsSection() {
-      const fmtCompactBtn = document.getElementById('fmtCompactBtn');
-      const fmtDetailedBtn = document.getElementById('fmtDetailedBtn');
-      if (appState.smsFormat === 'compact') {
-        fmtCompactBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-600 text-white shadow-xs transition';
-        fmtDetailedBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition';
+    // =========================================================================
+    // SEASON STATS & GAME HISTORY VIEWER
+    // =========================================================================
+    function renderStatsAndHistoryTab() {
+      // 1. Compute W-L-D & Goals Summary
+      let wins = 0, losses = 0, draws = 0, gf = 0, ga = 0;
+      state.gameHistory.forEach(g => {
+        gf += g.ourScore;
+        ga += g.oppScore;
+        if (g.ourScore > g.oppScore) wins++;
+        else if (g.ourScore < g.oppScore) losses++;
+        else draws++;
+      });
+
+      const diff = gf - ga;
+      document.getElementById('statRecord').textContent = `${wins}-${losses}-${draws}`;
+      document.getElementById('statGoalsFor').textContent = gf;
+      document.getElementById('statGoalsAgainst').textContent = ga;
+      document.getElementById('statGoalDiff').textContent = diff > 0 ? `+${diff}` : String(diff);
+
+      // 2. Render Player Season Leaderboard
+      const statsBody = document.getElementById('seasonStatsTableBody');
+      if (state.players.length === 0) {
+        statsBody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-slate-500 italic">Add players to your roster to track season stats.</td></tr>`;
       } else {
-        fmtDetailedBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-600 text-white shadow-xs transition';
-        fmtCompactBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition';
+        const sortedPlayers = [...state.players].sort((a, b) => {
+          const ptsA = ((a.prior.goals || 0) * 2) + (a.prior.assists || 0);
+          const ptsB = ((b.prior.goals || 0) * 2) + (b.prior.assists || 0);
+          if (ptsB !== ptsA) return ptsB - ptsA;
+          return (b.prior.goals || 0) - (a.prior.goals || 0);
+        });
+
+        statsBody.innerHTML = sortedPlayers.map(p => {
+          const g = p.prior.goals || 0;
+          const a = p.prior.assists || 0;
+          const pts = g + a;
+          const gp = p.prior.gamesPlayed || 0;
+          const bench = p.prior.BENCH || 0;
+          const posBreakdown = `${p.prior.FWD || 0} / ${p.prior.MID || 0} / ${p.prior.DEF || 0} / ${p.prior.GK || 0}`;
+
+          return `
+            <tr>
+              <td class="py-2.5 pr-2 font-bold text-white">${escapeHtml(formatPlayerBadge(p))}</td>
+              <td class="py-2.5 px-2 text-center mono text-slate-300">${gp}</td>
+              <td class="py-2.5 px-2 text-center mono font-bold text-emerald-400">${g}</td>
+              <td class="py-2.5 px-2 text-center mono font-bold text-blue-400">${a}</td>
+              <td class="py-2.5 px-2 text-center mono font-extrabold text-amber-300">${pts}</td>
+              <td class="py-2.5 px-2 text-center mono text-slate-300">${bench}</td>
+              <td class="py-2.5 pl-2 text-right mono text-slate-400">${posBreakdown}</td>
+            </tr>
+          `;
+        }).join('');
       }
 
-      document.getElementById('smsPreviewText').textContent = generateSmsText();
+      // 3. Render Completed Game History List
+      const histContainer = document.getElementById('gameHistoryList');
+      if (state.gameHistory.length === 0) {
+        histContainer.innerHTML = `
+          <div class="text-xs text-slate-500 italic py-6 text-center bg-slate-950/50 rounded-xl border border-slate-800/70">
+            No completed games saved yet. Tap "✅ Complete & Save Game" at the bottom of the Live Game tab when a match finishes.
+          </div>
+        `;
+        return;
+      }
 
-      // Render individual clickable message bubbles matching the screenshot
-      const bubbleLines = getCompactBubbleLines();
-      const pillsContainer = document.getElementById('smsBubblePills');
-      pillsContainer.innerHTML = bubbleLines.map(line => {
-        const encoded = encodeURIComponent(line);
+      histContainer.innerHTML = state.gameHistory.map(game => {
+        const isWin = game.ourScore > game.oppScore;
+        const isLoss = game.ourScore < game.oppScore;
+        const badgeClass = isWin
+          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+          : isLoss
+            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+            : 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+        const resChar = isWin ? 'W' : isLoss ? 'L' : 'D';
+
         return `
-          <button onclick="copySingleBubbleLine('${encoded}')"
-            class="text-xs font-semibold px-3 py-1.5 rounded-2xl bg-sky-900 hover:bg-sky-800 active:scale-95 text-white shadow-2xs transition flex items-center gap-1.5">
-            <span>${line}</span>
-            <i class="fa-regular fa-copy text-[10px] text-sky-300"></i>
-          </button>
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded-md text-xs font-extrabold border ${badgeClass}">${resChar}</span>
+                <span class="font-extrabold text-sm text-white">
+                  ${escapeHtml(game.teamName)} <span class="text-emerald-400 mono">${game.ourScore}</span> - <span class="text-slate-300 mono">${game.oppScore}</span> ${escapeHtml(game.opponent)}
+                </span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] text-slate-400">${escapeHtml(game.date)}</span>
+                <button onclick="deleteHistoryGame('${game.id}')" class="text-slate-500 hover:text-rose-400 text-xs" title="Delete Game">🗑️</button>
+              </div>
+            </div>
+
+            ${game.goals && game.goals.length > 0 ? `
+              <div class="pt-1.5 border-t border-slate-800/70 flex flex-wrap gap-1.5">
+                ${game.goals.map(gl => `
+                  <span class="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-[11px] text-slate-300">
+                    ⚽ <strong>${escapeHtml(gl.scorerLabel)}</strong>
+                    ${gl.assistLabel ? `<span class="text-slate-400">(Ast: ${escapeHtml(gl.assistLabel)})</span>` : ''}
+                  </span>
+                `).join('')}
+              </div>
+            ` : `<div class="text-[11px] text-slate-500 italic">No team goals logged</div>`}
+          </div>
         `;
       }).join('');
     }
 
-    function showToast(msg) {
-      const banner = document.getElementById('toastBanner');
-      const text = document.getElementById('toastMessage');
-      text.textContent = msg;
-      banner.classList.remove('hidden');
-      banner.classList.add('flex');
-      clearTimeout(window.__toastTimer);
-      window.__toastTimer = setTimeout(() => {
-        banner.classList.add('hidden');
-        banner.classList.remove('flex');
-      }, 2400);
+    function finishAndSaveGame() {
+      if (state.players.length === 0) return;
+
+      const presentPlayers = state.players.filter(p => p.present);
+
+      // 1. Roll shift & position counts into season totals
+      state.computedShifts.forEach(s => {
+        presentPlayers.forEach(p => {
+          if (s.benchIds.includes(p.id)) {
+            p.prior.BENCH = (p.prior.BENCH || 0) + 1;
+          } else {
+            const pos = s.positions[p.id] || 'MID';
+            p.prior[pos] = (p.prior[pos] || 0) + 1;
+          }
+        });
+      });
+
+      // 2. Roll games played, goals, and assists into player totals
+      presentPlayers.forEach(p => {
+        p.prior.gamesPlayed = (p.prior.gamesPlayed || 0) + 1;
+      });
+
+      const formattedGoals = (state.currentMatch.goals || []).map(g => {
+        const scorer = state.players.find(p => p.id === g.scorerId);
+        if (scorer) scorer.prior.goals = (scorer.prior.goals || 0) + 1;
+
+        const assister = g.assistId ? state.players.find(p => p.id === g.assistId) : null;
+        if (assister) assister.prior.assists = (assister.prior.assists || 0) + 1;
+
+        return {
+          quarter: g.quarter,
+          clock: g.clock,
+          scorerLabel: getPlayerDisplayById(g.scorerId),
+          assistLabel: g.assistId ? getPlayerDisplayById(g.assistId) : null
+        };
+      });
+
+      // 3. Save match record to gameHistory
+      const todayStr = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      state.gameHistory.unshift({
+        id: 'match_' + Date.now(),
+        date: todayStr,
+        teamName: state.teamName || 'My Team',
+        opponent: state.currentMatch.opponent || 'Opponent',
+        ourScore: state.currentMatch.ourScore || 0,
+        oppScore: state.currentMatch.oppScore || 0,
+        goals: formattedGoals
+      });
+
+      // 4. Reset live match state for next week
+      state.currentMatch = {
+        opponent: 'Opponent',
+        ourScore: 0,
+        oppScore: 0,
+        goals: []
+      };
+      state.lockedShifts = {};
+      state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
+      resetTimer();
+      recalculateSchedule();
+      switchMainTab('stats');
+      renderAll();
     }
 
-    function renderAll() {
-      renderTimerUI();
-      renderAttendanceAndRosterUI();
-      renderScheduleUI();
-      renderFairnessTable();
-      renderSmsSection();
+    function deleteHistoryGame(gameId) {
+      state.gameHistory = state.gameHistory.filter(g => g.id !== gameId);
+      saveState();
+      renderStatsAndHistoryTab();
     }
 
-    /********************************************************************
-     * 11. INITIALIZE APP ON LOAD
-     ********************************************************************/
-    window.addEventListener('DOMContentLoaded', () => {
+    // =========================================================================
+    // SMS / RCS TEXT GENERATION & COPY
+    // =========================================================================
+    function getSmsMessages() {
+      const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
+      const ordinals = ['', '1st', '2nd', '3rd', '4th'];
+      const messages = [];
+
+      state.computedShifts.forEach(s => {
+        const qOrd = ordinals[s.quarter];
+        const benchNames = s.benchIds.map(id => playerMap[id]).filter(Boolean);
+        const benchStr = benchNames.length === 0
+          ? 'None'
+          : benchNames.length === 1
+            ? benchNames[0]
+            : benchNames.slice(0, -1).join(', ') + ' and ' + benchNames[benchNames.length - 1];
+
+        const prefix = state.shiftsPerQuarter === 1
+          ? `Out ${qOrd}`
+          : (s.part === 1 ? `Out ${qOrd}` : `2nd part of ${qOrd}`);
+
+        if (state.smsStyle === 'compact' || !state.trackPositions) {
+          messages.push(`${prefix} ${benchStr}`);
+        } else {
+          const groups = { FWD: [], MID: [], DEF: [], GK: [] };
+          Object.entries(s.positions || {}).forEach(([pid, pos]) => {
+            if (!s.benchIds.includes(pid) && playerMap[pid]) {
+              groups[pos].push(playerMap[pid]);
+            }
+          });
+          const posParts = [];
+          if (groups.FWD.length) posParts.push(`FWD: ${groups.FWD.join('/')}`);
+          if (groups.MID.length) posParts.push(`MID: ${groups.MID.join('/')}`);
+          if (groups.DEF.length) posParts.push(`DEF: ${groups.DEF.join('/')}`);
+          if (groups.GK.length)  posParts.push(`GK: ${groups.GK.join('/')}`);
+
+          messages.push(`${prefix}: ${benchStr} | ${posParts.join(' • ')}`);
+        }
+      });
+
+      return messages;
+    }
+
+    function renderSmsBubbles() {
+      const isCompact = state.smsStyle === 'compact' || !state.trackPositions;
+      document.getElementById('smsBtnCompact').className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+        isCompact ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-slate-800 text-slate-400 border-slate-700'
+      }`;
+      document.getElementById('smsBtnPositions').className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+        !isCompact ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-slate-800 text-slate-400 border-slate-700'
+      }`;
+
+      const messages = getSmsMessages();
+      const container = document.getElementById('smsBubblesContainer');
+      container.innerHTML = messages.map((msg, idx) => `
+        <div onclick="copySingleBubble(${idx})"
+          class="cursor-pointer group flex items-center justify-between bg-[#1e4e68] hover:bg-[#255f7e] text-white px-3.5 py-2 rounded-2xl rounded-br-sm text-xs font-medium shadow transition">
+          <span>${escapeHtml(msg)}</span>
+          <span class="text-[10px] opacity-60 group-hover:opacity-100 ml-2 shrink-0">📋 Copy</span>
+        </div>
+      `).join('');
+    }
+
+    function setSmsStyle(style) {
+      state.smsStyle = style;
+      saveState();
+      renderSmsBubbles();
+    }
+
+    function copySingleBubble(idx) {
+      const msgs = getSmsMessages();
+      if (msgs[idx]) copyTextToClipboard(msgs[idx]);
+    }
+
+    function copyAllSms() {
+      const fullText = getSmsMessages().join('\n');
+      copyTextToClipboard(fullText, 'copyAllBtn');
+    }
+
+    function copyTextToClipboard(text, btnId) {
+      navigator.clipboard.writeText(text).then(() => {
+        if (btnId) {
+          const btn = document.getElementById(btnId);
+          const orig = btn.innerHTML;
+          btn.innerHTML = '✅ Copied!';
+          setTimeout(() => { btn.innerHTML = orig; }, 1600);
+        }
+      });
+    }
+
+    // =========================================================================
+    // ON-THE-FLY SHIFT & POSITION MODAL ACTIONS
+    // =========================================================================
+    function openEditModal(shiftIdx) {
+      editingShiftIdx = shiftIdx;
+      const shift = state.computedShifts[shiftIdx];
+      if (!shift) return;
+
+      modalDraft = {
+        benchIds: [...shift.benchIds],
+        positions: { ...shift.positions }
+      };
+
+      const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
+      const partLabel = state.shiftsPerQuarter === 2
+        ? (shift.part === 1 ? `1st ${shiftMins}m` : `2nd ${shiftMins}m`)
+        : `Full ${state.quarterMins}m`;
+
+      document.getElementById('modalTitle').textContent = `Edit Quarter ${shift.quarter} • ${partLabel}`;
+      document.getElementById('editModal').classList.remove('hidden');
+      renderModalPlayers();
+    }
+
+    function closeEditModal() {
+      editingShiftIdx = null;
+      document.getElementById('editModal').classList.add('hidden');
+    }
+
+    function renderModalPlayers() {
+      const presentPlayers = state.players.filter(p => p.present);
+      const targetBench = Math.max(0, presentPlayers.length - getTotalFieldSlots());
+
+      document.getElementById('modalBenchCounter').textContent =
+        `Sitting Out: ${modalDraft.benchIds.length} (Recommended: ${targetBench})`;
+
+      const activeZones = ['FWD', 'MID', 'DEF'];
+      if ((state.slots.GK || 0) > 0) activeZones.push('GK');
+
+      const listEl = document.getElementById('modalPlayerList');
+      listEl.innerHTML = presentPlayers.map(p => {
+        const isSitting = modalDraft.benchIds.includes(p.id);
+        const currentPos = modalDraft.positions[p.id] || 'MID';
+
+        return `
+          <div class="flex items-center justify-between bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5">
+            <div class="flex items-center gap-2.5">
+              <button onclick="toggleModalBench('${p.id}')"
+                class="px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  isSitting
+                    ? 'pos-BENCH'
+                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                }">
+                ${isSitting ? '🪑 Sitting Out' : '🏃 On Field'}
+              </button>
+              <span class="font-bold text-sm text-white">${escapeHtml(formatPlayerBadge(p))}</span>
+            </div>
+
+            ${!isSitting && state.trackPositions ? `
+              <div class="flex items-center gap-1">
+                ${activeZones.map(z => `
+                  <button onclick="setModalPlayerPos('${p.id}', '${z}')"
+                    class="px-2 py-1 rounded-md text-xs font-extrabold transition ${
+                      currentPos === z ? `pos-${z}` : 'bg-slate-900 text-slate-500 border border-slate-800'
+                    }">
+                    ${z}
+                  </button>
+                `).join('')}
+              </div>
+            ` : `
+              <span class="text-xs text-slate-500">${isSitting ? 'On Bench' : 'Playing'}</span>
+            `}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function toggleModalBench(playerId) {
+      const idx = modalDraft.benchIds.indexOf(playerId);
+      if (idx >= 0) {
+        modalDraft.benchIds.splice(idx, 1);
+        if (!modalDraft.positions[playerId]) modalDraft.positions[playerId] = 'MID';
+      } else {
+        modalDraft.benchIds.push(playerId);
+      }
+      renderModalPlayers();
+    }
+
+    function setModalPlayerPos(playerId, pos) {
+      modalDraft.positions[playerId] = pos;
+      renderModalPlayers();
+    }
+
+    function saveModalShift() {
+      if (editingShiftIdx === null) return;
+      state.lockedShifts[editingShiftIdx] = {
+        benchIds: [...modalDraft.benchIds],
+        positions: { ...modalDraft.positions }
+      };
+      closeEditModal();
       recalculateSchedule();
       renderAll();
-      initFirebase();
-    });
+    }
+
+    function unlockCurrentModalShift() {
+      if (editingShiftIdx === null) return;
+      delete state.lockedShifts[editingShiftIdx];
+      closeEditModal();
+      recalculateSchedule();
+      renderAll();
+    }
+
+    // =========================================================================
+    // ROSTER, ATTENDANCE & FORMAT HANDLERS
+    // =========================================================================
+    function addPlayerFromOnboarding() {
+      const numEl = document.getElementById('onboardPlayerNum');
+      const nameEl = document.getElementById('onboardPlayerName');
+      const teamEl = document.getElementById('onboardTeamNameInput');
+
+      if (teamEl && teamEl.value.trim()) {
+        state.teamName = teamEl.value.trim();
+      }
+
+      const name = (nameEl.value || '').trim();
+      const number = (numEl.value || '').trim();
+      if (!name) return;
+
+      state.players.push({
+        id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        name,
+        number,
+        present: true,
+        prior: { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 }
+      });
+
+      numEl.value = '';
+      nameEl.value = '';
+      nameEl.focus();
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function addPlayer() {
+      const numInput = document.getElementById('newPlayerNumberInput');
+      const nameInput = document.getElementById('newPlayerInput');
+      const name = (nameInput.value || '').trim();
+      const number = (numInput.value || '').trim();
+      if (!name) return;
+
+      state.players.push({
+        id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        name,
+        number,
+        present: true,
+        prior: { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 }
+      });
+      numInput.value = '';
+      nameInput.value = '';
+      nameInput.focus();
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function updatePlayerNumber(playerId, newNum) {
+      const p = state.players.find(x => x.id === playerId);
+      if (p) {
+        p.number = (newNum || '').trim();
+        saveState();
+        renderAll();
+      }
+    }
+
+    function updatePlayerName(playerId, newName) {
+      const p = state.players.find(x => x.id === playerId);
+      if (p && newName.trim()) {
+        p.name = newName.trim();
+        saveState();
+        renderAll();
+      }
+    }
+
+    function removePlayer(id) {
+      state.players = state.players.filter(p => p.id !== id);
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function togglePositionMode() {
+      state.trackPositions = !state.trackPositions;
+      saveState();
+      renderAll();
+    }
+
+    function toggleDrawer(id) {
+      document.getElementById(id).classList.toggle('hidden');
+    }
+
+    function togglePlayerPresence(playerId) {
+      const p = state.players.find(x => x.id === playerId);
+      if (p) {
+        p.present = !p.present;
+        recalculateSchedule();
+        renderAll();
+      }
+    }
+
+    function setAllAttendance(val) {
+      state.players.forEach(p => { p.present = val; });
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function rotateStarterOrder() {
+      if (state.players.length > 1) {
+        const first = state.players.shift();
+        state.players.push(first);
+        recalculateSchedule();
+        renderAll();
+      }
+    }
+
+    function handleFormationChange(presetKey) {
+      const preset = FORMATION_PRESETS[presetKey];
+      if (preset) {
+        state.formationKey = presetKey;
+        state.slots = { ...preset.slots };
+        state.lockedShifts = {};
+        recalculateSchedule();
+        renderAll();
+      }
+    }
+
+    function adjustSlot(zone, delta) {
+      state.slots[zone] = Math.max(0, (state.slots[zone] || 0) + delta);
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function handleTimingChange() {
+      state.quarterMins = parseInt(document.getElementById('quarterMinsSelect').value, 10) || 8;
+      state.shiftsPerQuarter = parseInt(document.getElementById('shiftsPerQtrSelect').value, 10) || 2;
+      state.lockedShifts = {};
+      resetTimer();
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function toggleFullQuarter(q) {
+      state.fullQuarterLocks[q] = !state.fullQuarterLocks[q];
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function adjustPrior(playerId, zone, delta) {
+      const p = state.players.find(x => x.id === playerId);
+      if (p) {
+        p.prior[zone] = Math.max(0, (p.prior[zone] || 0) + delta);
+        recalculateSchedule();
+        renderAll();
+      }
+    }
+
+    function resetSeasonHistory() {
+      state.players.forEach(p => {
+        p.prior = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 };
+      });
+      state.lockedShifts = {};
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function clearAllLocks() {
+      state.lockedShifts = {};
+      state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
+      recalculateSchedule();
+      renderAll();
+    }
+
+    // =========================================================================
+    // SIDELINE TIMER & WEB AUDIO REFEREE WHISTLE
+    // =========================================================================
+    function renderTimerUI() {
+      const totalSec = state.quarterMins * 60;
+      const midSec = Math.floor(totalSec / 2);
+      const mins = Math.floor(timer.secondsLeft / 60);
+      const secs = timer.secondsLeft % 60;
+
+      document.getElementById('timerDisplay').textContent =
+        `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+      for (let q = 1; q <= 4; q++) {
+        const btn = document.getElementById('qTab' + q);
+        btn.className = q === timer.quarter
+          ? 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950'
+          : 'px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400 hover:text-white';
+      }
+
+      const startBtn = document.getElementById('timerStartBtn');
+      if (timer.running) {
+        startBtn.textContent = '⏸ Pause';
+        startBtn.className = 'px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-sm transition';
+      } else {
+        startBtn.textContent = '▶ Start';
+        startBtn.className = 'px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm transition shadow-lg shadow-emerald-500/20';
+      }
+
+      const badge = document.getElementById('timerShiftBadge');
+      if (state.shiftsPerQuarter === 2) {
+        const isFirstHalf = timer.secondsLeft > midSec;
+        badge.textContent = isFirstHalf
+          ? `Q${timer.quarter} • 1st Shift`
+          : `Q${timer.quarter} • 2nd Shift`;
+
+        const p1 = isFirstHalf ? ((timer.secondsLeft - midSec) / midSec) * 100 : 0;
+        const p2 = isFirstHalf ? 100 : (timer.secondsLeft / midSec) * 100;
+        document.getElementById('progressHalf1').style.width = `${Math.max(0, Math.min(100, p1))}%`;
+        document.getElementById('progressHalf2').style.width = `${Math.max(0, Math.min(100, p2))}%`;
+      } else {
+        badge.textContent = `Q${timer.quarter} • Full Quarter`;
+        const pct = (timer.secondsLeft / totalSec) * 100;
+        document.getElementById('progressHalf1').style.width = `${pct}%`;
+        document.getElementById('progressHalf2').style.width = `${pct}%`;
+      }
+    }
+
+    function toggleTimer() {
+      if (timer.running) {
+        clearInterval(timer.intervalId);
+        timer.running = false;
+      } else {
+        timer.running = true;
+        timer.intervalId = setInterval(tickTimer, 1000);
+      }
+      renderTimerUI();
+    }
+
+    function tickTimer() {
+      if (timer.secondsLeft > 0) {
+        timer.secondsLeft--;
+        const midSec = Math.floor((state.quarterMins * 60) / 2);
+
+        if (state.shiftsPerQuarter === 2 && timer.secondsLeft === midSec && !timer.midAlertFired) {
+          timer.midAlertFired = true;
+          playWhistle(2);
+          showSubAlert(timer.quarter, 2);
+        }
+
+        if (timer.secondsLeft === 0) {
+          clearInterval(timer.intervalId);
+          timer.running = false;
+          playWhistle(3);
+          if (timer.quarter < 4) {
+            showSubAlert(timer.quarter + 1, 1);
+          }
+        }
+        renderTimerUI();
+      }
+    }
+
+    function setTimerQuarter(q) {
+      timer.quarter = q;
+      resetTimer();
+    }
+
+    function adjustTimer(deltaSec) {
+      const maxSec = state.quarterMins * 60;
+      timer.secondsLeft = Math.max(0, Math.min(maxSec, timer.secondsLeft + deltaSec));
+      renderTimerUI();
+    }
+
+    function syncMidQuarter() {
+      timer.secondsLeft = Math.floor((state.quarterMins * 60) / 2);
+      timer.midAlertFired = true;
+      showSubAlert(timer.quarter, 2);
+      renderTimerUI();
+    }
+
+    function resetTimer() {
+      clearInterval(timer.intervalId);
+      timer.running = false;
+      timer.secondsLeft = state.quarterMins * 60;
+      timer.midAlertFired = false;
+      renderTimerUI();
+    }
+
+    function showSubAlert(quarter, part) {
+      const targetShift = state.computedShifts.find(s => s.quarter === quarter && s.part === part);
+      if (!targetShift) return;
+
+      const prevShift = targetShift.index > 0 ? state.computedShifts[targetShift.index - 1] : null;
+      const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
+
+      const goingOut = targetShift.benchIds.map(id => playerMap[id]).filter(Boolean);
+      const comingIn = prevShift
+        ? prevShift.benchIds.filter(id => !targetShift.benchIds.includes(id)).map(id => playerMap[id])
+        : [];
+
+      const banner = document.getElementById('subAlertBanner');
+      const content = document.getElementById('subAlertContent');
+
+      let html = `
+        <div><strong>🏃 Coming ON Field:</strong> ${comingIn.length ? comingIn.join(', ') : 'Starting Lineup'}</div>
+        <div><strong>🪑 Going to Bench:</strong> ${goingOut.length ? goingOut.join(', ') : 'None'}</div>
+      `;
+
+      if (state.trackPositions) {
+        const posSummary = Object.entries(targetShift.positions || {})
+          .filter(([pid]) => !targetShift.benchIds.includes(pid) && playerMap[pid])
+          .map(([pid, pos]) => `${playerMap[pid]} (${pos})`)
+          .join(' • ');
+        html += `<div class="pt-1 text-emerald-300"><strong>📍 Field Spots:</strong> ${posSummary}</div>`;
+      }
+
+      content.innerHTML = html;
+      banner.classList.remove('hidden');
+    }
+
+    function playWhistle(blasts = 2) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        for (let i = 0; i < blasts; i++) {
+          const start = ctx.currentTime + i * 0.35;
+          const dur = i === blasts - 1 ? 0.38 : 0.22;
+          const osc1 = ctx.createOscillator();
+          const osc2 = ctx.createOscillator();
+          const gain = ctx.createGain();
+
+          osc1.type = 'triangle';
+          osc2.type = 'sine';
+          osc1.frequency.setValueAtTime(2750, start);
+          osc2.frequency.setValueAtTime(2830, start);
+
+          gain.gain.setValueAtTime(0.01, start);
+          gain.gain.exponentialRampToValueAtTime(0.35, start + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+
+          osc1.connect(gain);
+          osc2.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc1.start(start);
+          osc2.start(start);
+          osc1.stop(start + dur);
+          osc2.stop(start + dur);
+        }
+        if (navigator.vibrate) navigator.vibrate([200, 100, 250]);
+      } catch (e) {
+        console.warn('AudioContext unavailable:', e);
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[m]));
+    }
+
+    window.addEventListener('DOMContentLoaded', loadState);
   </script>
 </body>
 </html>
-```
