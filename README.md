@@ -1,61 +1,78 @@
-# ⚽ Soccer-Substitution-Scheduler-
-Soccer Substitution Scheduler 
+# ⚽ Soccer Sideline Sub, Position & Stats Manager
 
-
-A mobile-first, single-file web application designed for managing youth soccer (5v5) player rotations, sideline timing, and multi-game playing time balance. Built for quick, one-handed operation on the sideline with instant SMS/RCS schedule sharing and cloud state persistence.
+A mobile-first, single-file web application for youth soccer coaches to manage fair bench rotations, automated field position assignments (`FWD`, `MID`, `DEF`, `GK`), live match scoring (goals and assists), sideline timing, and season-long team statistics. Built for fast, one-handed sideline operation with instant SMS/RCS schedule sharing and automatic state persistence.
 
 ---
 
 ## ✨ Key Features
 
-* **📋 Dynamic Attendance & Roster Management:** 
-  * Defaults to selecting all players on the roster.
-  * One-tap attendance toggles automatically recalculate the entire game's substitution schedule based on how many players are present (e.g., shifting seamlessly between 2 subs per shift with 7 players, or 1 sub per shift with 6 players).
-* **⚖️ Multi-Week Fair Play Algorithm:** 
-  * Balances sitting shifts across both the current game and cumulative historical games.
-  * Prevents back-to-back sitting shifts (no player sits more than 4 minutes consecutively unless forced by a full-quarter override).
-* **🔄 On-the-Fly Sideline Reconfiguration:** 
-  * **Edit Actuals:** If a substitution deviates from the plan (e.g., an injury, tired player, or ref wave-off), tap any shift to lock in who *actually* sat out. All remaining unlocked shifts automatically recalculate to maintain overall balance.
-  * **Full 8-Min Quarter Override:** One-tap toggle for quarters where the referee does not stop play for a mid-quarter substitution.
-* **⏱️ Built-In Sideline Timer & Whistle Alerts:** 
-  * 8:00 quarter countdown clock with visual progress bars for 1st Half (8:00–4:00) and 2nd Half (4:00–0:00) shifts.
-  * Quick `-15s`, `+15s`, and `Sync 4:00` buttons to keep your phone aligned with the referee's whistle.
-  * Synthesized Web Audio referee whistle + vibration alerts at the 4:00 mid-quarter sub mark and 0:00 quarter end, displaying a clear banner of who is **Coming In** and **Going Out**.
-* **💬 1-Tap SMS / RCS Schedule Export:** 
-  * Formats the current rotation into clean text message bubbles (`Out 1st...`, `2nd part of 2nd...`) for quick copying and pasting into group texts.
-* **☁️ Dual Persistence (Firebase + LocalStorage):** 
-  * Connects to Google Firebase Firestore for real-time syncing across multiple coaches/parents' devices and week-to-week season tracking.
-  * Gracefully falls back to browser `localStorage` for 100% offline sideline reliability.
+### 📋 Blank-Slate Onboarding & Roster Management
+* **First-Load Team Setup:** Starts with a clean onboarding prompt to set your team name, select your game format, and build your roster.
+* **Jersey Numbers & Inline Editing:** Add player names alongside optional jersey numbers (`#`), edit numbers or names at any time, and toggle player attendance with a single tap during pre-game roll call.
+* **Starter Order Rotation:** One-tap `🔀 Rotate Order` button shifts tie-breaker priority from week to week.
+
+### 📐 Configurable Game Formats & Formations (4v4 to 11v11)
+* **Built-In Presets:** Supports `4v4 (No GK)`, `5v5 (No GK: 2-1-2 or 3-2)`, `5v5 (With GK)`, `6v6`, `7v7 (2-3-1 or 2-2-2)`, `9v9`, and `11v11`.
+* **Custom Zone Slots:** Fine-tune the exact number of active on-field slots for **Attack (`FWD`)**, **Midfield (`MID`)**, **Defense (`DEF`)**, and **Goalie (`GK`)**.
+* **Flexible Timing:** Configure quarter durations (`6`, `8`, `10`, `12`, or `15` minutes) and choose between **2 shifts per quarter** (mid-quarter sub) or **1 shift per quarter** (full-quarter rotation).
+
+### ⚖️ Fair Playtime & Position Rotation Engine
+* **Multi-Game Bench Balancing:** Dynamically calculates sitting shifts based on who is present today combined with cumulative season bench history, while preventing back-to-back sitting shifts.
+* **Automated Position Rotation:** Assigns on-field players across `FWD`, `MID`, `DEF`, and `GK` by prioritizing players with the lowest cumulative shifts in each zone and applying an anti-stagnation penalty so players don't get stuck in the same position for consecutive shifts.
+* **Live Fairness Matrix:** Displays a real-time table of today's shifts (and cumulative season totals in parentheses) across Bench, `FWD`, `MID`, `DEF`, `GK`, and overall Play Percentage.
+
+### 🔄 On-the-Fly Sideline Reconfiguration
+* **Interactive Shift & Position Modal:** Tap any shift card (`✏️ Edit Actual`) to swap who actually sat on the bench or tap any active player's position badge to lock in a manual position change. Saving locks that shift and automatically recalculates all remaining unlocked shifts to preserve overall fairness.
+* **Full-Quarter Override:** Toggle `Full Qtr (No Mid-Sub)` on any quarter header if the referee waves off the mid-quarter stoppage; the app holds the current lineup for the full quarter and rebalances the rest of the match.
+
+### 🏆 Live Scorekeeper (Goals & Assists)
+* **Team Goal Logger:** Tap `+ Goal ⚽` under your team to select **Who Scored** (or *Own Goal*) and **Who Assisted** (or *Unassisted*). Every goal is automatically stamped with the active quarter and countdown clock time.
+* **Opponent Score Counter:** Quick `+1` and `-1` buttons track the opposing team's score without extra prompts.
+* **Match Scoring Timeline:** Displays a live summary of goals and assists beneath the scoreboard with one-tap undo (`✕`).
+
+### 📊 Season Stats Leaderboard & Game History Viewer
+* **Team Record Dashboard:** Automatically calculates season `W-L-D` record, **Goals For**, **Goals Against**, and **Goal Differential**.
+* **Player Season Leaderboard:** Tracks cumulative **Games Played (`GP`)**, **Goals (`G`)**, **Assists (`A`)**, **Points (`PTS`)**, **Bench Shifts**, and **Position Breakdown (`FWD / MID / DEF / GK`)** across all completed games.
+* **Completed Match Archive:** Tapping `✅ Complete & Save Game` at the end of a match archives the date, opponent, final score, and goal/assist log into the permanent Game History list while rolling all shift and stat totals into the season baseline.
+
+### ⏱️ Built-In Sideline Timer & Referee Whistle Alerts
+* **Quarter & Shift Countdown:** Features a high-contrast clock with `-15s`, `+15s`, and `Sync Mid` buttons to stay aligned with the referee's watch.
+* **Dual-Half Progress Bars:** Visually tracks both the 1st half and 2nd half of each quarter.
+* **Synthesized Whistle + Vibration Alerts:** Uses the native Web Audio API to blow a referee whistle at the mid-quarter sub mark and end of the quarter, popping up an on-screen alert banner showing who is **Coming ON Field**, **Going to Bench**, and their **Assigned Field Positions**.
+
+### 💬 1-Tap SMS / RCS Schedule Export
+* **Two Formatting Modes:** Switch between **Subs Only** (`Out 1st: ...`, `2nd part of 1st: ...`) and **Subs + Positions** (`Out 1st: ... | FWD: ... • MID: ... • DEF: ...`).
+* **Instant Copy:** Tap any individual message bubble to copy a single shift, or tap `📋 Copy All` to paste the full game plan into a parent or coaching group text.
 
 ---
 
 ## 🚀 Deployment (GitHub + Vercel)
 
-Because the entire application lives inside a single `index.html` file with zero build steps Required, deploying to Vercel takes less than a minute:
+Because the entire application is contained in a single `index.html` file with zero build steps or external dependencies, deploying to Vercel takes under a minute:
 
-1. Push `index.html` and `README.md` to a new GitHub repository.
+1. Push `index.html` and `README.md` to a GitHub repository.
 2. Log in to [Vercel](https://vercel.com/) and click **Add New... → Project**.
 3. Import your GitHub repository.
-4. Leave the Framework Preset as **Other** (no build command needed) and click **Deploy**.
+4. Leave the Framework Preset as **Other** (no build command or output directory required) and click **Deploy**.
 
 ---
 
-## 🔥 Connecting Firebase (Optional for Multi-Device Sync)
+## 📱 Game-Day Sideline Workflow
 
-Out of the box, the app saves your roster, game states, and cumulative shift history locally on your phone using `localStorage`. To sync across multiple phones in real time:
-
-1. Go to the [Firebase Console](https://console.firebase.google.com/) and create a new project.
-2. Navigate to **Build → Authentication → Sign-in method** and enable **Anonymous** sign-in.
-3. Navigate to **Build → Firestore Database**, create a database, and start in **Test Mode** (or configure rules for your app path).
-4. In **Project Settings → General**, register a **Web App** and copy your `firebaseConfig` object.
-5. In `index.html`, pass your configuration into `__firebase_config` (or replace the config initialization block directly with your keys).
-6. **Important:** Add your Vercel production URL (e.g., `your-project.vercel.app`) under **Authentication → Settings → Authorized domains** in the Firebase Console.
+1. **Initial Setup (First Use Only):** Enter your team name, choose your formation preset, and add your players with their jersey numbers.
+2. **Pre-Game Roll Call:** Tap any absent players in the **Roll Call** bar to mark them out—the bench and position schedule recalculates immediately.
+3. **Share the Lineup:** Scroll to **Text Schedule** and tap **Copy All** to text the rotation to assistant coaches or parents.
+4. **Kickoff & Live Tracking:**
+   * Enter the opponent's name on the scoreboard and tap **▶ Start** on the quarter timer at the opening whistle.
+   * Log team goals and assists as they happen using **+ Goal ⚽**.
+   * If a substitution or position changes mid-game, tap that shift card to lock in the actual lineup and rebalance the remaining shifts.
+5. **Post-Game Archive:** After Quarter 4, tap **✅ Complete & Save Game** at the bottom of the page to archive the match result and roll all player stats and shift counts into the **📊 Stats & Game History** tab.
 
 ---
 
-## 📱 Sideline Workflow
+## 🛠️ Tech Stack
 
-1. **Pre-Game Roll Call:** Open the app before kickoff and tap any absent players in the **Attendance** bar to mark them out.
-2. **Share the Plan:** Scroll to the **Text Schedule** card and tap **Copy All** to text the initial rotation to the sideline.
-3. **Run the Clock:** Tap **Start** when the ref blows the opening whistle. At the `4:00
-4. 
+* **Frontend:** HTML5, Vanilla JavaScript, Tailwind CSS (CDN)
+* **Audio:** Native Web Audio API (synthesized referee whistle with zero external audio files)
+* **Storage:** Browser `localStorage` (`soccer_sub_pos_stats_v3`) for automatic offline-ready persistence
+* 
