@@ -27,30 +27,36 @@
   <header class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-3">
     <div class="max-w-2xl mx-auto flex flex-col gap-2.5">
       <div class="flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-lg">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 shrink-0 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-lg">
             ⚽
           </div>
-          <div>
-            <h1 id="headerTeamName" class="font-extrabold text-base leading-tight tracking-tight text-white">Soccer Sideline Manager</h1>
+          <div class="min-w-0">
+            <h1 id="headerTeamName" class="font-extrabold text-base leading-tight tracking-tight text-white truncate">Soccer Sideline Manager</h1>
             <div class="flex items-center gap-2 text-xs text-slate-400">
-              <span class="inline-flex items-center gap-1 text-emerald-400 font-medium">
+              <span id="syncBadgeText" class="inline-flex items-center gap-1 text-emerald-400 font-medium">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Auto-Saved
               </span>
               <span>•</span>
-              <span id="formatSummaryLabel">5v5 (2-1-2) • 8m Qtrs</span>
+              <span id="formatSummaryLabel" class="truncate">5v5 (2-1-2) • 8m Qtrs</span>
             </div>
           </div>
         </div>
 
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button onclick="shareAppStateLink()" id="shareLinkBtn"
+            class="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold transition flex items-center gap-1"
+            title="Share a link containing your current roster, rotation, and stats">
+            <span>🔗 Share Link</span>
+          </button>
           <button onclick="togglePositionMode()" id="posToggleBtn"
             class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1">
             <span>📍 Pos: ON</span>
           </button>
           <button onclick="toggleDrawer('settingsDrawer')"
-            class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold">
-            ⚙️ Roster / Setup
+            class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold"
+            title="Roster & Format Setup">
+            ⚙️
           </button>
         </div>
       </div>
@@ -70,6 +76,17 @@
   </header>
 
   <main class="max-w-2xl mx-auto px-3 pt-3 space-y-4">
+
+    <!-- Shared Link Import Banner (Shown when loaded from a #s= link) -->
+    <div id="sharedImportBanner" class="hidden bg-indigo-950/90 border border-indigo-400/50 rounded-2xl p-3.5 flex items-center justify-between gap-2 text-xs text-indigo-100 shadow-lg">
+      <div>
+        <strong class="text-white">📥 Shared Team Data Loaded!</strong>
+        <span id="sharedImportSubtext" class="block text-indigo-200 mt-0.5">Roster, rotation, and stats were imported from your link and saved to this browser.</span>
+      </div>
+      <button onclick="document.getElementById('sharedImportBanner').classList.add('hidden')" class="px-2.5 py-1 rounded-lg bg-indigo-800/80 text-indigo-200 hover:text-white font-semibold shrink-0">
+        Got it
+      </button>
+    </div>
 
     <!-- =================================================================== -->
     <!-- INITIAL BLANK ROSTER ONBOARDING PROMPT (Shown when roster is empty) -->
@@ -543,13 +560,11 @@
         <button onclick="closeGoalModal()" class="text-slate-400 hover:text-white text-sm px-2 py-1">✕</button>
       </div>
 
-      <!-- Scorer Selector -->
       <div class="space-y-1.5">
         <label class="block text-xs font-bold text-emerald-400 uppercase tracking-wider">1. Who Scored?</label>
         <div id="goalScorerChips" class="grid grid-cols-2 gap-1.5"></div>
       </div>
 
-      <!-- Assist Selector -->
       <div class="space-y-1.5">
         <label class="block text-xs font-bold text-blue-400 uppercase tracking-wider">2. Assist (Optional)</label>
         <div id="goalAssistChips" class="grid grid-cols-2 gap-1.5"></div>
@@ -626,7 +641,7 @@
     };
 
     let state = {
-      activeTab: 'game', // 'game' | 'stats'
+      activeTab: 'game',
       teamName: 'My Team',
       trackPositions: true,
       smsStyle: 'positions',
@@ -634,23 +649,19 @@
       slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 },
       quarterMins: 8,
       shiftsPerQuarter: 2,
-      // Starts blank on initial load so coach is prompted to add their roster
       players: [],
       lockedShifts: {},
       fullQuarterLocks: { 1: false, 2: false, 3: false, 4: false },
       computedShifts: [],
-      // Live Match Score & Goal Tracker
       currentMatch: {
         opponent: 'Opponent',
         ourScore: 0,
         oppScore: 0,
-        goals: [] // { id, quarter, clock, scorerId, assistId }
+        goals: []
       },
-      // Saved Completed Games
       gameHistory: []
     };
 
-    // Sideline Timer State
     let timer = {
       quarter: 1,
       secondsLeft: 8 * 60,
@@ -659,64 +670,148 @@
       midAlertFired: false
     };
 
-    // Modal Temp States
     let editingShiftIdx = null;
     let modalDraft = { benchIds: [], positions: {} };
     let goalDraft = { scorerId: null, assistId: null };
 
     // =========================================================================
-    // INITIALIZATION & PERSISTENCE
+    // URL SNAPSHOT SHARING & PERSISTENCE
     // =========================================================================
+    function getSerializablePayload() {
+      return {
+        teamName: state.teamName,
+        trackPositions: state.trackPositions,
+        smsStyle: state.smsStyle,
+        formationKey: state.formationKey,
+        slots: state.slots,
+        quarterMins: state.quarterMins,
+        shiftsPerQuarter: state.shiftsPerQuarter,
+        players: state.players,
+        lockedShifts: state.lockedShifts,
+        fullQuarterLocks: state.fullQuarterLocks,
+        currentMatch: state.currentMatch,
+        gameHistory: state.gameHistory
+      };
+    }
+
+    function encodeStateToBase64(obj) {
+      const jsonStr = JSON.stringify(obj);
+      return btoa(unescape(encodeURIComponent(jsonStr)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+    }
+
+    function decodeStateFromBase64(b64) {
+      let norm = b64.replace(/-/g, '+').replace(/_/g, '/');
+      while (norm.length % 4) norm += '=';
+      const jsonStr = decodeURIComponent(escape(atob(norm)));
+      return JSON.parse(jsonStr);
+    }
+
+    async function shareAppStateLink() {
+      const payload = getSerializablePayload();
+      const encoded = encodeStateToBase64(payload);
+      const baseUrl = window.location.origin + window.location.pathname;
+      const shareUrl = `${baseUrl}#s=${encoded}`;
+
+      const btn = document.getElementById('shareLinkBtn');
+      const origHtml = btn.innerHTML;
+
+      // Try native mobile share sheet first, or copy to clipboard
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: `${state.teamName} - Sub & Stats Tracker`,
+            text: `Open our live ${state.teamName} rotation, roster, and season stats:`,
+            url: shareUrl
+          });
+          return;
+        } catch (err) {
+          // User canceled or share failed; fall back to clipboard copy
+        }
+      }
+
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        btn.innerHTML = '<span>✅ Link Copied!</span>';
+        setTimeout(() => { btn.innerHTML = origHtml; }, 2000);
+      } catch (e) {
+        prompt('Copy this link to share your roster and history:', shareUrl);
+      }
+    }
+
+    function applyParsedState(parsed) {
+      state = { ...state, ...parsed };
+      state.players.forEach(p => {
+        p.number = p.number || '';
+        p.prior = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0, ...(p.prior || {}) };
+      });
+      state.currentMatch = {
+        opponent: 'Opponent',
+        ourScore: 0,
+        oppScore: 0,
+        goals: [],
+        ...(parsed.currentMatch || {})
+      };
+      state.gameHistory = parsed.gameHistory || [];
+    }
+
     function loadState() {
+      let loadedFromHash = false;
+
+      // 1. First load any existing local storage data
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
-          const parsed = JSON.parse(raw);
-          state = { ...state, ...parsed };
-          state.players.forEach(p => {
-            p.number = p.number || '';
-            p.prior = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0, ...(p.prior || {}) };
-          });
-          state.currentMatch = {
-            opponent: 'Opponent',
-            ourScore: 0,
-            oppScore: 0,
-            goals: [],
-            ...(parsed.currentMatch || {})
-          };
-          state.gameHistory = parsed.gameHistory || [];
+          applyParsedState(JSON.parse(raw));
         }
       } catch (e) {
         console.warn('Could not load saved state:', e);
       }
+
+      // 2. Check if URL contains a shared snapshot (#s=...)
+      if (window.location.hash && window.location.hash.startsWith('#s=')) {
+        try {
+          const encoded = window.location.hash.slice(3);
+          const sharedData = decodeStateFromBase64(encoded);
+          if (sharedData && Array.isArray(sharedData.players)) {
+            const hasExistingLocalRoster = state.players.length > 0;
+            const shouldImport = !hasExistingLocalRoster || confirm(
+              `Load shared data for "${sharedData.teamName || 'Team'}" (${sharedData.players.length} players)? This will replace the current data saved in this browser.`
+            );
+            if (shouldImport) {
+              applyParsedState(sharedData);
+              loadedFromHash = true;
+            }
+          }
+          // Clean up URL hash so refreshing doesn't re-prompt
+          history.replaceState(null, '', window.location.pathname + window.location.search);
+        } catch (err) {
+          console.warn('Failed to parse shared URL state:', err);
+        }
+      }
+
       timer.secondsLeft = state.quarterMins * 60;
       recalculateSchedule();
       renderAll();
+
+      if (loadedFromHash) {
+        document.getElementById('sharedImportBanner').classList.remove('hidden');
+      }
     }
 
     function saveState() {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
           activeTab: state.activeTab,
-          teamName: state.teamName,
-          trackPositions: state.trackPositions,
-          smsStyle: state.smsStyle,
-          formationKey: state.formationKey,
-          slots: state.slots,
-          quarterMins: state.quarterMins,
-          shiftsPerQuarter: state.shiftsPerQuarter,
-          players: state.players,
-          lockedShifts: state.lockedShifts,
-          fullQuarterLocks: state.fullQuarterLocks,
-          currentMatch: state.currentMatch,
-          gameHistory: state.gameHistory
+          ...getSerializablePayload()
         }));
       } catch (e) {
         console.warn('Save error:', e);
       }
     }
 
-    // Helper to display "#10 Maya" or "Maya"
     function formatPlayerBadge(player) {
       if (!player) return '';
       return player.number ? `#${player.number} ${player.name}` : player.name;
@@ -923,7 +1018,6 @@
         ? 'py-1.5 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950 shadow'
         : 'py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white';
 
-      // Show Onboarding Card whenever roster is empty
       const onboarding = document.getElementById('onboardingCard');
       if (state.players.length === 0) {
         onboarding.classList.remove('hidden');
@@ -1349,7 +1443,6 @@
     // SEASON STATS & GAME HISTORY VIEWER
     // =========================================================================
     function renderStatsAndHistoryTab() {
-      // 1. Compute W-L-D & Goals Summary
       let wins = 0, losses = 0, draws = 0, gf = 0, ga = 0;
       state.gameHistory.forEach(g => {
         gf += g.ourScore;
@@ -1365,7 +1458,6 @@
       document.getElementById('statGoalsAgainst').textContent = ga;
       document.getElementById('statGoalDiff').textContent = diff > 0 ? `+${diff}` : String(diff);
 
-      // 2. Render Player Season Leaderboard
       const statsBody = document.getElementById('seasonStatsTableBody');
       if (state.players.length === 0) {
         statsBody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-slate-500 italic">Add players to your roster to track season stats.</td></tr>`;
@@ -1399,7 +1491,6 @@
         }).join('');
       }
 
-      // 3. Render Completed Game History List
       const histContainer = document.getElementById('gameHistoryList');
       if (state.gameHistory.length === 0) {
         histContainer.innerHTML = `
@@ -1455,7 +1546,6 @@
 
       const presentPlayers = state.players.filter(p => p.present);
 
-      // 1. Roll shift & position counts into season totals
       state.computedShifts.forEach(s => {
         presentPlayers.forEach(p => {
           if (s.benchIds.includes(p.id)) {
@@ -1467,7 +1557,6 @@
         });
       });
 
-      // 2. Roll games played, goals, and assists into player totals
       presentPlayers.forEach(p => {
         p.prior.gamesPlayed = (p.prior.gamesPlayed || 0) + 1;
       });
@@ -1487,7 +1576,6 @@
         };
       });
 
-      // 3. Save match record to gameHistory
       const todayStr = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       state.gameHistory.unshift({
         id: 'match_' + Date.now(),
@@ -1499,7 +1587,6 @@
         goals: formattedGoals
       });
 
-      // 4. Reset live match state for next week
       state.currentMatch = {
         opponent: 'Opponent',
         ourScore: 0,
