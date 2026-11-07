@@ -2,8 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Soccer Sub, Position & Stats Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Sideline Pro — Soccer Sub, Position & Stats Manager</title>
+
+  <!-- Single-File PWA Meta Tags & Inline Manifest -->
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Sideline Pro" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230f172a'/%3E%3Crect x='24' y='24' width='464' height='464' rx='92' fill='%2310b981' fill-opacity='0.15' stroke='%2310b981' stroke-width='16'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-size='280'%3E%E2%9A%BD%3C/text%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230f172a'/%3E%3Crect x='24' y='24' width='464' height='464' rx='92' fill='%2310b981' fill-opacity='0.15' stroke='%2310b981' stroke-width='16'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-size='280'%3E%E2%9A%BD%3C/text%3E%3C/svg%3E" />
+  <link rel="manifest" href='data:application/manifest+json,{"name":"Sideline Pro - Soccer Manager","short_name":"Sideline Pro","start_url":".","display":"standalone","background_color":"#0f172a","theme_color":"#0f172a","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 512 512%27%3E%3Crect width=%27512%27 height=%27512%27 rx=%27112%27 fill=%27%230f172a%27/%3E%3Ctext x=%2750%25%27 y=%2754%25%27 dominant-baseline=%27middle%27 text-anchor=%27middle%27 font-size=%27300%27%3E%E2%9A%BD%3C/text%3E%3C/svg%3E","sizes":"512x512","type":"image/svg+xml","purpose":"any maskable"}]}' />
+
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap');
@@ -12,6 +23,7 @@
       -webkit-tap-highlight-color: transparent;
       background-color: #0f172a;
       color: #f8fafc;
+      padding-top: env(safe-area-inset-top);
     }
     .mono { font-family: 'JetBrains Mono', monospace; }
     .pos-FWD { background: rgba(239, 68, 68, 0.18); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); }
@@ -23,18 +35,22 @@
 </head>
 <body class="min-h-screen pb-24 selection:bg-emerald-500 selection:text-white">
 
-  <!-- Top Header -->
-  <header class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-3">
+  <!-- Top Header with Multi-Team Switcher -->
+  <header class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-3.5 py-3">
     <div class="max-w-2xl mx-auto flex flex-col gap-2.5">
       <div class="flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2.5 min-w-0">
+        <div class="flex items-center gap-2.5 min-w-0 flex-1">
           <div class="w-9 h-9 shrink-0 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-lg">
             ⚽
           </div>
-          <div class="min-w-0">
-            <h1 id="headerTeamName" class="font-extrabold text-base leading-tight tracking-tight text-white truncate">Soccer Sideline Manager</h1>
-            <div class="flex items-center gap-2 text-xs text-slate-400">
-              <span id="syncBadgeText" class="inline-flex items-center gap-1 text-emerald-400 font-medium">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5">
+              <select id="headerTeamSelect" onchange="handleTeamSelectChange(this.value)"
+                class="bg-slate-800/90 hover:bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 font-extrabold text-sm text-white truncate max-w-[190px] sm:max-w-xs focus:outline-none focus:border-emerald-500 cursor-pointer">
+              </select>
+            </div>
+            <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+              <span class="inline-flex items-center gap-1 text-emerald-400 font-medium">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Auto-Saved
               </span>
               <span>•</span>
@@ -46,8 +62,8 @@
         <div class="flex items-center gap-1.5 shrink-0">
           <button onclick="shareAppStateLink()" id="shareLinkBtn"
             class="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold transition flex items-center gap-1"
-            title="Share a link containing your current roster, rotation, and stats">
-            <span>🔗 Share Link</span>
+            title="Share a link containing this team's roster, rotation, and stats">
+            <span>🔗 Share</span>
           </button>
           <button onclick="togglePositionMode()" id="posToggleBtn"
             class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1">
@@ -81,7 +97,7 @@
     <div id="sharedImportBanner" class="hidden bg-indigo-950/90 border border-indigo-400/50 rounded-2xl p-3.5 flex items-center justify-between gap-2 text-xs text-indigo-100 shadow-lg">
       <div>
         <strong class="text-white">📥 Shared Team Data Loaded!</strong>
-        <span id="sharedImportSubtext" class="block text-indigo-200 mt-0.5">Roster, rotation, and stats were imported from your link and saved to this browser.</span>
+        <span id="sharedImportSubtext" class="block text-indigo-200 mt-0.5">Team roster, rotation, and stats were imported and saved to your team list.</span>
       </div>
       <button onclick="document.getElementById('sharedImportBanner').classList.add('hidden')" class="px-2.5 py-1 rounded-lg bg-indigo-800/80 text-indigo-200 hover:text-white font-semibold shrink-0">
         Got it
@@ -95,7 +111,7 @@
       <div class="flex items-start justify-between gap-3">
         <div>
           <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-            Welcome Coach
+            Team Setup
           </span>
           <h2 class="text-lg font-extrabold text-white mt-1.5">Set Up Your Team Roster</h2>
           <p class="text-xs text-slate-300 mt-0.5">
@@ -155,9 +171,24 @@
         <button onclick="toggleDrawer('settingsDrawer')" class="text-xs text-slate-400 hover:text-white px-2 py-1">✕ Close</button>
       </div>
 
+      <!-- Multi-Team Actions Bar -->
+      <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+        <span class="text-xs font-semibold text-slate-300">Managing Multiple Teams?</span>
+        <div class="flex items-center gap-2">
+          <button onclick="createNewTeamPrompt()"
+            class="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
+            ➕ New Team
+          </button>
+          <button onclick="deleteCurrentTeam()" id="deleteTeamBtn"
+            class="px-3 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-semibold">
+            🗑️ Delete Team
+          </button>
+        </div>
+      </div>
+
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-semibold text-slate-400 mb-1">Your Team Name</label>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Current Team Name</label>
           <input id="teamNameInput" type="text" placeholder="My Team"
             onchange="updateTeamName(this.value)"
             class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
@@ -506,7 +537,7 @@
         </div>
       </section>
 
-      <!-- Player Season Stats Leaderboard -->
+      <!-- Player Season Leaderboard -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
         <div class="flex items-center justify-between mb-3">
           <div>
@@ -544,6 +575,50 @@
       </section>
 
     </div>
+
+    <!-- =================================================================== -->
+    <!-- BOTTOM FEEDBACK & FEATURE REQUESTS SECTION (GOOGLE FORM)            -->
+    <!-- =================================================================== -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="font-bold text-sm text-white flex items-center gap-1.5">
+            <span>📣 Feedback & Feature Requests</span>
+          </h2>
+          <p class="text-xs text-slate-400">
+            Have an idea, bug report, or suggestion for the sideline manager? Let us know!
+          </p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button onclick="toggleFeedbackEmbed()" id="toggleFeedbackEmbedBtn"
+            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition">
+            📝 Fill Out Inline
+          </button>
+          <a href="https://docs.google.com/forms/d/e/1FAIpQLSc-SiGRPxfkgy1xA32tXDQmXwvF1EaEHHcDVhqarDmsNYlQ_g/viewform?usp=publish-editor"
+            target="_blank" rel="noopener noreferrer"
+            class="px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition flex items-center gap-1">
+            <span>Open Feedback Form ↗</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Collapsible Embedded Google Form -->
+      <div id="feedbackEmbedContainer" class="hidden pt-3 border-t border-slate-800">
+        <div class="bg-white rounded-xl overflow-hidden shadow-inner">
+          <iframe
+            id="feedbackIframe"
+            data-src="https://docs.google.com/forms/d/e/1FAIpQLSc-SiGRPxfkgy1xA32tXDQmXwvF1EaEHHcDVhqarDmsNYlQ_g/viewform?embedded=true"
+            width="100%"
+            height="640"
+            frameborder="0"
+            marginheight="0"
+            marginwidth="0"
+            class="w-full">
+            Loading form…
+          </iframe>
+        </div>
+      </div>
+    </section>
 
   </main>
 
@@ -624,9 +699,10 @@
 
   <script>
     // =========================================================================
-    // STATE & INITIAL BLANK ROSTER CONFIGURATION
+    // MULTI-TEAM STORAGE & STATE ARCHITECTURE
     // =========================================================================
-    const STORAGE_KEY = 'soccer_sub_pos_stats_v3';
+    const MULTI_TEAM_STORAGE_KEY = 'soccer_sub_pos_stats_v4_multiteam';
+    const LEGACY_STORAGE_KEY = 'soccer_sub_pos_stats_v3';
 
     const FORMATION_PRESETS = {
       '5v5_212':  { label: '5v5 (2-1-2)',     slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 } },
@@ -640,27 +716,38 @@
       '11v11_433':{ label: '11v11 (3-3-4+GK)',slots: { FWD: 3, MID: 3, DEF: 4, GK: 1 } }
     };
 
-    let state = {
-      activeTab: 'game',
-      teamName: 'My Team',
-      trackPositions: true,
-      smsStyle: 'positions',
-      formationKey: '5v5_212',
-      slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 },
-      quarterMins: 8,
-      shiftsPerQuarter: 2,
-      players: [],
-      lockedShifts: {},
-      fullQuarterLocks: { 1: false, 2: false, 3: false, 4: false },
-      computedShifts: [],
-      currentMatch: {
-        opponent: 'Opponent',
-        ourScore: 0,
-        oppScore: 0,
-        goals: []
-      },
-      gameHistory: []
+    function createBlankTeam(name = 'My Team') {
+      return {
+        id: 'team_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        activeTab: 'game',
+        teamName: name,
+        trackPositions: true,
+        smsStyle: 'positions',
+        formationKey: '5v5_212',
+        slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 },
+        quarterMins: 8,
+        shiftsPerQuarter: 2,
+        players: [],
+        lockedShifts: {},
+        fullQuarterLocks: { 1: false, 2: false, 3: false, 4: false },
+        computedShifts: [],
+        currentMatch: {
+          opponent: 'Opponent',
+          ourScore: 0,
+          oppScore: 0,
+          goals: []
+        },
+        gameHistory: []
+      };
+    }
+
+    let appStore = {
+      activeTeamId: null,
+      teams: []
     };
+
+    // Active team pointer (references the active object inside appStore.teams)
+    let state = createBlankTeam();
 
     let timer = {
       quarter: 1,
@@ -675,10 +762,116 @@
     let goalDraft = { scorerId: null, assistId: null };
 
     // =========================================================================
-    // URL SNAPSHOT SHARING & PERSISTENCE
+    // FEEDBACK FORM EMBED TOGGLE
     // =========================================================================
+    function toggleFeedbackEmbed() {
+      const container = document.getElementById('feedbackEmbedContainer');
+      const iframe = document.getElementById('feedbackIframe');
+      const btn = document.getElementById('toggleFeedbackEmbedBtn');
+
+      const isHidden = container.classList.contains('hidden');
+      if (isHidden) {
+        if (!iframe.getAttribute('src')) {
+          iframe.setAttribute('src', iframe.getAttribute('data-src'));
+        }
+        container.classList.remove('hidden');
+        btn.textContent = '✕ Hide Inline Form';
+      } else {
+        container.classList.add('hidden');
+        btn.textContent = '📝 Fill Out Inline';
+      }
+    }
+
+    // =========================================================================
+    // MULTI-TEAM MANAGEMENT & URL SNAPSHOT SHARING
+    // =========================================================================
+    function normalizeTeamObject(rawTeam) {
+      const base = createBlankTeam(rawTeam.teamName || 'My Team');
+      const merged = { ...base, ...rawTeam };
+      merged.players = (merged.players || []).map(p => ({
+        ...p,
+        number: p.number || '',
+        prior: { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0, ...(p.prior || {}) }
+      }));
+      merged.currentMatch = {
+        opponent: 'Opponent',
+        ourScore: 0,
+        oppScore: 0,
+        goals: [],
+        ...(rawTeam.currentMatch || {})
+      };
+      merged.gameHistory = rawTeam.gameHistory || [];
+      return merged;
+    }
+
+    function syncActiveTeamPointer() {
+      if (!appStore.teams || appStore.teams.length === 0) {
+        const initial = createBlankTeam('Team 1');
+        appStore.teams = [initial];
+        appStore.activeTeamId = initial.id;
+      }
+      let found = appStore.teams.find(t => t.id === appStore.activeTeamId);
+      if (!found) {
+        found = appStore.teams[0];
+        appStore.activeTeamId = found.id;
+      }
+      state = found;
+    }
+
+    function handleTeamSelectChange(val) {
+      if (val === '__ADD_NEW_TEAM__') {
+        createNewTeamPrompt();
+        return;
+      }
+      switchActiveTeam(val);
+    }
+
+    function switchActiveTeam(teamId) {
+      const target = appStore.teams.find(t => t.id === teamId);
+      if (!target) return;
+      appStore.activeTeamId = target.id;
+      state = target;
+      resetTimer();
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function createNewTeamPrompt() {
+      const defaultName = `Team ${appStore.teams.length + 1}`;
+      const entered = prompt('Enter a name for the new team:', defaultName);
+      if (entered === null) {
+        renderHeaderAndSettings();
+        return;
+      }
+      const cleanName = entered.trim() || defaultName;
+      const newTeam = createBlankTeam(cleanName);
+      appStore.teams.push(newTeam);
+      appStore.activeTeamId = newTeam.id;
+      state = newTeam;
+      resetTimer();
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function deleteCurrentTeam() {
+      if (appStore.teams.length <= 1) {
+        alert('You must have at least one team. To start fresh, you can remove players or reset counts.');
+        return;
+      }
+      const confirmDelete = confirm(`Delete "${state.teamName}" and all of its roster and game history?`);
+      if (!confirmDelete) return;
+
+      appStore.teams = appStore.teams.filter(t => t.id !== state.id);
+      appStore.activeTeamId = appStore.teams[0].id;
+      syncActiveTeamPointer();
+      resetTimer();
+      recalculateSchedule();
+      renderAll();
+    }
+
     function getSerializablePayload() {
       return {
+        id: state.id,
         teamName: state.teamName,
         trackPositions: state.trackPositions,
         smsStyle: state.smsStyle,
@@ -718,80 +911,99 @@
       const btn = document.getElementById('shareLinkBtn');
       const origHtml = btn.innerHTML;
 
-      // Try native mobile share sheet first, or copy to clipboard
       if (navigator.share) {
         try {
           await navigator.share({
-            title: `${state.teamName} - Sub & Stats Tracker`,
+            title: `${state.teamName} - Sideline Pro`,
             text: `Open our live ${state.teamName} rotation, roster, and season stats:`,
             url: shareUrl
           });
           return;
         } catch (err) {
-          // User canceled or share failed; fall back to clipboard copy
+          // Fall back to clipboard copy
         }
       }
 
       try {
         await navigator.clipboard.writeText(shareUrl);
-        btn.innerHTML = '<span>✅ Link Copied!</span>';
+        btn.innerHTML = '<span>✅ Copied!</span>';
         setTimeout(() => { btn.innerHTML = origHtml; }, 2000);
       } catch (e) {
-        prompt('Copy this link to share your roster and history:', shareUrl);
+        prompt('Copy this link to share your team roster and history:', shareUrl);
       }
-    }
-
-    function applyParsedState(parsed) {
-      state = { ...state, ...parsed };
-      state.players.forEach(p => {
-        p.number = p.number || '';
-        p.prior = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0, ...(p.prior || {}) };
-      });
-      state.currentMatch = {
-        opponent: 'Opponent',
-        ourScore: 0,
-        oppScore: 0,
-        goals: [],
-        ...(parsed.currentMatch || {})
-      };
-      state.gameHistory = parsed.gameHistory || [];
     }
 
     function loadState() {
       let loadedFromHash = false;
 
-      // 1. First load any existing local storage data
+      // 1. Load Multi-Team Storage (or migrate from v3 single-team storage)
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          applyParsedState(JSON.parse(raw));
+        const rawMulti = localStorage.getItem(MULTI_TEAM_STORAGE_KEY);
+        if (rawMulti) {
+          const parsedMulti = JSON.parse(rawMulti);
+          if (parsedMulti && Array.isArray(parsedMulti.teams) && parsedMulti.teams.length > 0) {
+            appStore.teams = parsedMulti.teams.map(normalizeTeamObject);
+            appStore.activeTeamId = parsedMulti.activeTeamId || appStore.teams[0].id;
+          }
+        } else {
+          // Check legacy v3 storage and migrate automatically
+          const rawLegacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+          if (rawLegacy) {
+            const legacyTeam = normalizeTeamObject(JSON.parse(rawLegacy));
+            appStore.teams = [legacyTeam];
+            appStore.activeTeamId = legacyTeam.id;
+          }
         }
       } catch (e) {
         console.warn('Could not load saved state:', e);
       }
 
-      // 2. Check if URL contains a shared snapshot (#s=...)
+      syncActiveTeamPointer();
+
+      // 2. Check if URL contains a shared team snapshot (#s=...)
       if (window.location.hash && window.location.hash.startsWith('#s=')) {
         try {
           const encoded = window.location.hash.slice(3);
           const sharedData = decodeStateFromBase64(encoded);
           if (sharedData && Array.isArray(sharedData.players)) {
-            const hasExistingLocalRoster = state.players.length > 0;
-            const shouldImport = !hasExistingLocalRoster || confirm(
-              `Load shared data for "${sharedData.teamName || 'Team'}" (${sharedData.players.length} players)? This will replace the current data saved in this browser.`
+            const incomingTeam = normalizeTeamObject(sharedData);
+            const existingIndex = appStore.teams.findIndex(
+              t => t.id === incomingTeam.id || t.teamName.toLowerCase() === incomingTeam.teamName.toLowerCase()
             );
-            if (shouldImport) {
-              applyParsedState(sharedData);
+
+            // If current active team is completely empty, replace it directly
+            if (appStore.teams.length === 1 && appStore.teams[0].players.length === 0) {
+              appStore.teams[0] = incomingTeam;
+              appStore.activeTeamId = incomingTeam.id;
+              loadedFromHash = true;
+            } else if (existingIndex >= 0) {
+              const shouldUpdate = confirm(
+                `Update existing team "${appStore.teams[existingIndex].teamName}" with the shared link data? (Cancel to add it as a separate team instead)`
+              );
+              if (shouldUpdate) {
+                appStore.teams[existingIndex] = incomingTeam;
+                appStore.activeTeamId = incomingTeam.id;
+              } else {
+                incomingTeam.id = 'team_' + Date.now();
+                incomingTeam.teamName = `${incomingTeam.teamName} (Shared)`;
+                appStore.teams.push(incomingTeam);
+                appStore.activeTeamId = incomingTeam.id;
+              }
+              loadedFromHash = true;
+            } else {
+              // Add as a brand new team without overwriting other teams!
+              appStore.teams.push(incomingTeam);
+              appStore.activeTeamId = incomingTeam.id;
               loadedFromHash = true;
             }
           }
-          // Clean up URL hash so refreshing doesn't re-prompt
           history.replaceState(null, '', window.location.pathname + window.location.search);
         } catch (err) {
           console.warn('Failed to parse shared URL state:', err);
         }
       }
 
+      syncActiveTeamPointer();
       timer.secondsLeft = state.quarterMins * 60;
       recalculateSchedule();
       renderAll();
@@ -803,9 +1015,9 @@
 
     function saveState() {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({
-          activeTab: state.activeTab,
-          ...getSerializablePayload()
+        localStorage.setItem(MULTI_TEAM_STORAGE_KEY, JSON.stringify({
+          activeTeamId: appStore.activeTeamId,
+          teams: appStore.teams
         }));
       } catch (e) {
         console.warn('Save error:', e);
@@ -1021,7 +1233,8 @@
       const onboarding = document.getElementById('onboardingCard');
       if (state.players.length === 0) {
         onboarding.classList.remove('hidden');
-        document.getElementById('onboardTeamNameInput').value = state.teamName === 'My Team' ? '' : state.teamName;
+        document.getElementById('onboardTeamNameInput').value =
+          (state.teamName === 'My Team' || state.teamName.startsWith('Team ')) ? '' : state.teamName;
         document.getElementById('onboardFormatSelect').value = state.formationKey;
       } else {
         onboarding.classList.add('hidden');
@@ -1029,8 +1242,21 @@
     }
 
     function renderHeaderAndSettings() {
-      document.getElementById('headerTeamName').textContent = state.teamName || 'Soccer Sideline Manager';
+      // Populate multi-team selector dropdown in header
+      const selectEl = document.getElementById('headerTeamSelect');
+      selectEl.innerHTML = [
+        ...appStore.teams.map(t =>
+          `<option value="${t.id}" ${t.id === state.id ? 'selected' : ''}>${escapeHtml(t.teamName || 'My Team')} (${t.players.length})</option>`
+        ),
+        `<option value="__ADD_NEW_TEAM__">➕ Add New Team...</option>`
+      ].join('');
+
       document.getElementById('teamNameInput').value = state.teamName || '';
+
+      const deleteBtn = document.getElementById('deleteTeamBtn');
+      if (deleteBtn) {
+        deleteBtn.style.display = appStore.teams.length > 1 ? '' : 'none';
+      }
 
       const preset = FORMATION_PRESETS[state.formationKey];
       const formLabel = preset ? preset.label : `${getTotalFieldSlots()}v${getTotalFieldSlots()}`;
@@ -1495,7 +1721,7 @@
       if (state.gameHistory.length === 0) {
         histContainer.innerHTML = `
           <div class="text-xs text-slate-500 italic py-6 text-center bg-slate-950/50 rounded-xl border border-slate-800/70">
-            No completed games saved yet. Tap "✅ Complete & Save Game" at the bottom of the Live Game tab when a match finishes.
+            No completed games saved yet for ${escapeHtml(state.teamName)}. Tap "✅ Complete & Save Game" at the bottom of the Live Game tab when a match finishes.
           </div>
         `;
         return;
