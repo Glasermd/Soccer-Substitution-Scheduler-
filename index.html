@@ -299,7 +299,7 @@
     </section>
 
     <!-- =================================================================== -->
-    <!-- TAB 1: LIVE GAME, SCOREBOARD, TIMER & SUB ROTATION                  -->
+    <!-- TAB 1: LIVE GAME, SCOREBOARD, ROLL CALL & EMBEDDED-TIMER ROTATION   -->
     <!-- =================================================================== -->
     <div id="viewGame" class="space-y-4">
 
@@ -352,67 +352,6 @@
         </div>
       </section>
 
-      <!-- Built-In Sideline Timer & Whistle Alert Card -->
-      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
-        <div class="flex items-center justify-between mb-2">
-          <div class="flex items-center gap-1.5">
-            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Quarter</span>
-            <div class="flex gap-1">
-              <button onclick="setTimerQuarter(1)" id="qTab1" class="px-2.5 py-1 rounded-lg text-xs font-bold">Q1</button>
-              <button onclick="setTimerQuarter(2)" id="qTab2" class="px-2.5 py-1 rounded-lg text-xs font-bold">Q2</button>
-              <button onclick="setTimerQuarter(3)" id="qTab3" class="px-2.5 py-1 rounded-lg text-xs font-bold">Q3</button>
-              <button onclick="setTimerQuarter(4)" id="qTab4" class="px-2.5 py-1 rounded-lg text-xs font-bold">Q4</button>
-            </div>
-          </div>
-          <span id="timerShiftBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-            Q1 • 1st Shift
-          </span>
-        </div>
-
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 my-2">
-          <div class="flex items-baseline gap-3">
-            <div id="timerDisplay" class="mono text-5xl font-extrabold tracking-tight text-white">08:00</div>
-            <button onclick="playWhistle(1)" class="text-xs text-slate-400 hover:text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700">
-              📣 Whistle
-            </button>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-1.5">
-            <button onclick="toggleTimer()" id="timerStartBtn"
-              class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm transition shadow-lg shadow-emerald-500/20">
-              ▶ Start
-            </button>
-            <button onclick="adjustTimer(-15)" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold border border-slate-700">-15s</button>
-            <button onclick="adjustTimer(15)" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold border border-slate-700">+15s</button>
-            <button onclick="syncMidQuarter()" class="px-2.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40">
-              Sync Mid
-            </button>
-            <button onclick="resetTimer()" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-bold border border-slate-700">
-              ↺
-            </button>
-          </div>
-        </div>
-
-        <!-- Dual Progress Bar -->
-        <div class="grid grid-cols-2 gap-1.5 mt-2">
-          <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div id="progressHalf1" class="h-full bg-emerald-500 transition-all duration-300" style="width: 100%"></div>
-          </div>
-          <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div id="progressHalf2" class="h-full bg-amber-400 transition-all duration-300" style="width: 100%"></div>
-          </div>
-        </div>
-
-        <!-- Live Sub Alert Banner -->
-        <div id="subAlertBanner" class="hidden mt-3 p-3 rounded-xl bg-amber-500/15 border border-amber-400/50 text-amber-100">
-          <div class="flex items-center justify-between">
-            <span class="font-extrabold text-xs uppercase tracking-wider text-amber-300">🔔 Substitution & Position Alert</span>
-            <button onclick="document.getElementById('subAlertBanner').classList.add('hidden')" class="text-xs text-amber-300 hover:underline">Dismiss</button>
-          </div>
-          <div id="subAlertContent" class="text-xs mt-1.5 space-y-1"></div>
-        </div>
-      </section>
-
       <!-- Roll Call / Attendance Bar -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
         <div class="flex items-center justify-between mb-2.5">
@@ -432,13 +371,32 @@
         <div id="attendanceChips" class="flex flex-wrap gap-2"></div>
       </section>
 
-      <!-- Quarter-by-Quarter Rotation Schedule -->
-      <section class="space-y-3">
-        <div class="flex items-center justify-between px-1">
-          <h2 class="font-bold text-sm text-white">🔄 Game Rotation & Field Positions</h2>
-          <span class="text-xs text-slate-400">Tap any shift to edit actual subs/positions</span>
+      <!-- Live Sub Alert Banner (Triggered on Whistle / Shift Change) -->
+      <div id="subAlertBanner" class="hidden p-3.5 rounded-2xl bg-amber-500/15 border-2 border-amber-400/60 text-amber-100 shadow-xl">
+        <div class="flex items-center justify-between">
+          <span id="subAlertTitle" class="font-extrabold text-xs uppercase tracking-wider text-amber-300">🔔 Substitution & Position Alert</span>
+          <button onclick="document.getElementById('subAlertBanner').classList.add('hidden')" class="text-xs font-bold text-amber-300 hover:underline px-2 py-0.5">✕ Dismiss</button>
         </div>
-        <div id="scheduleGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+        <div id="subAlertContent" class="text-xs mt-1.5 space-y-1"></div>
+      </div>
+
+      <!-- Quarter-by-Quarter Rotation Schedule (With Embedded Active Timer) -->
+      <section class="space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-900 border border-slate-800 rounded-2xl px-3.5 py-2.5 shadow">
+          <div class="flex items-center gap-2">
+            <h2 class="font-bold text-sm text-white">🔄 Live Rotation</h2>
+            <span class="text-[11px] text-slate-400 hidden sm:inline">• Active shift hosts the timer</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <span class="text-[11px] font-bold uppercase text-slate-400 mr-1">Active Qtr:</span>
+            <button onclick="setTimerQuarter(1)" id="qTab1" class="px-2.5 py-1 rounded-lg text-xs font-bold transition">Q1</button>
+            <button onclick="setTimerQuarter(2)" id="qTab2" class="px-2.5 py-1 rounded-lg text-xs font-bold transition">Q2</button>
+            <button onclick="setTimerQuarter(3)" id="qTab3" class="px-2.5 py-1 rounded-lg text-xs font-bold transition">Q3</button>
+            <button onclick="setTimerQuarter(4)" id="qTab4" class="px-2.5 py-1 rounded-lg text-xs font-bold transition">Q4</button>
+          </div>
+        </div>
+
+        <div id="scheduleGrid" class="space-y-3"></div>
       </section>
 
       <!-- Playtime & Position Fairness Matrix -->
@@ -746,9 +704,9 @@
       teams: []
     };
 
-    // Active team pointer (references the active object inside appStore.teams)
     let state = createBlankTeam();
 
+    // Sideline Timer & Quarter Collapse State
     let timer = {
       quarter: 1,
       secondsLeft: 8 * 60,
@@ -757,9 +715,50 @@
       midAlertFired: false
     };
 
+    // Tracks which quarters are collapsed (previous quarters auto-collapse)
+    let collapsedQuarters = { 1: false, 2: false, 3: false, 4: false };
+
     let editingShiftIdx = null;
     let modalDraft = { benchIds: [], positions: {} };
     let goalDraft = { scorerId: null, assistId: null };
+
+    // =========================================================================
+    // ACTIVE QUARTER / SHIFT HELPERS
+    // =========================================================================
+    function getActiveShiftPart() {
+      if (state.shiftsPerQuarter === 1) return 1;
+      const midSec = Math.floor((state.quarterMins * 60) / 2);
+      // From full time down to midSec + 1 is 1st shift; midSec down to 0 is 2nd shift
+      return timer.secondsLeft > midSec ? 1 : 2;
+    }
+
+    function toggleQuarterCollapse(q) {
+      collapsedQuarters[q] = !collapsedQuarters[q];
+      renderScheduleGrid();
+    }
+
+    function activateSpecificShift(quarter, part) {
+      clearInterval(timer.intervalId);
+      timer.running = false;
+      timer.quarter = quarter;
+      const totalSec = state.quarterMins * 60;
+      const midSec = Math.floor(totalSec / 2);
+
+      if (state.shiftsPerQuarter === 2 && part === 2) {
+        timer.secondsLeft = midSec;
+        timer.midAlertFired = true;
+      } else {
+        timer.secondsLeft = totalSec;
+        timer.midAlertFired = false;
+      }
+
+      // Auto-collapse previous quarters, expand current
+      for (let q = 1; q <= 4; q++) {
+        collapsedQuarters[q] = q < quarter;
+      }
+      renderScheduleGrid();
+      renderTimerUI();
+    }
 
     // =========================================================================
     // FEEDBACK FORM EMBED TOGGLE
@@ -831,39 +830,22 @@
       if (!target) return;
       appStore.activeTeamId = target.id;
       state = target;
+      timer.quarter = 1;
+      collapsedQuarters = { 1: false, 2: false, 3: false, 4: false };
       resetTimer();
       recalculateSchedule();
       renderAll();
     }
 
     function createNewTeamPrompt() {
-      const defaultName = `Team ${appStore.teams.length + 1}`;
-      const entered = prompt('Enter a name for the new team:', defaultName);
-      if (entered === null) {
-        renderHeaderAndSettings();
-        return;
-      }
-      const cleanName = entered.trim() || defaultName;
-      const newTeam = createBlankTeam(cleanName);
-      appStore.teams.push(newTeam);
-      appStore.activeTeamId = newTeam.id;
-      state = newTeam;
-      resetTimer();
-      recalculateSchedule();
-      renderAll();
-    }
-
-    function deleteCurrentTeam() {
-      if (appStore.teams.length <= 1) {
-        alert('You must have at least one team. To start fresh, you can remove players or reset counts.');
-        return;
-      }
-      const confirmDelete = confirm(`Delete "${state.teamName}" and all of its roster and game history?`);
+      const defaultName = `Team ${appStore.teams.length + 1}`; const entered = prompt('Enter a name for the new team:', defaultName); if (entered === null) { renderHeaderAndSettings(); return; } const cleanName = entered.trim() \vert{}\vert{} defaultName; const newTeam = createBlankTeam(cleanName); appStore.teams.push(newTeam); appStore.activeTeamId = newTeam.id; state = newTeam; timer.quarter = 1; collapsedQuarters = { 1: false, 2: false, 3: false, 4: false }; resetTimer(); recalculateSchedule(); renderAll(); }  function deleteCurrentTeam() { if (appStore.teams.length <= 1) { alert('You must have at least one team. To start fresh, you can remove players or reset counts.'); return; } const confirmDelete = confirm(`Delete "${state.teamName}" and all of its roster and game history?`);
       if (!confirmDelete) return;
 
       appStore.teams = appStore.teams.filter(t => t.id !== state.id);
       appStore.activeTeamId = appStore.teams[0].id;
       syncActiveTeamPointer();
+      timer.quarter = 1;
+      collapsedQuarters = { 1: false, 2: false, 3: false, 4: false };
       resetTimer();
       recalculateSchedule();
       renderAll();
@@ -906,15 +888,7 @@
       const payload = getSerializablePayload();
       const encoded = encodeStateToBase64(payload);
       const baseUrl = window.location.origin + window.location.pathname;
-      const shareUrl = `${baseUrl}#s=${encoded}`;
-
-      const btn = document.getElementById('shareLinkBtn');
-      const origHtml = btn.innerHTML;
-
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: `${state.teamName} - Sideline Pro`,
+      const shareUrl = `${baseUrl}#s=${encoded}`;  const btn = document.getElementById('shareLinkBtn'); const origHtml = btn.innerHTML;  if (navigator.share) { try { await navigator.share({ title: `${state.teamName} - Sideline Pro`,
             text: `Open our live ${state.teamName} rotation, roster, and season stats:`,
             url: shareUrl
           });
@@ -936,7 +910,6 @@
     function loadState() {
       let loadedFromHash = false;
 
-      // 1. Load Multi-Team Storage (or migrate from v3 single-team storage)
       try {
         const rawMulti = localStorage.getItem(MULTI_TEAM_STORAGE_KEY);
         if (rawMulti) {
@@ -946,7 +919,6 @@
             appStore.activeTeamId = parsedMulti.activeTeamId || appStore.teams[0].id;
           }
         } else {
-          // Check legacy v3 storage and migrate automatically
           const rawLegacy = localStorage.getItem(LEGACY_STORAGE_KEY);
           if (rawLegacy) {
             const legacyTeam = normalizeTeamObject(JSON.parse(rawLegacy));
@@ -960,7 +932,6 @@
 
       syncActiveTeamPointer();
 
-      // 2. Check if URL contains a shared team snapshot (#s=...)
       if (window.location.hash && window.location.hash.startsWith('#s=')) {
         try {
           const encoded = window.location.hash.slice(3);
@@ -971,7 +942,6 @@
               t => t.id === incomingTeam.id || t.teamName.toLowerCase() === incomingTeam.teamName.toLowerCase()
             );
 
-            // If current active team is completely empty, replace it directly
             if (appStore.teams.length === 1 && appStore.teams[0].players.length === 0) {
               appStore.teams[0] = incomingTeam;
               appStore.activeTeamId = incomingTeam.id;
@@ -991,7 +961,6 @@
               }
               loadedFromHash = true;
             } else {
-              // Add as a brand new team without overwriting other teams!
               appStore.teams.push(incomingTeam);
               appStore.activeTeamId = incomingTeam.id;
               loadedFromHash = true;
@@ -1026,7 +995,7 @@
 
     function formatPlayerBadge(player) {
       if (!player) return '';
-      return player.number ? `#${player.number} ${player.name}` : player.name;
+      return player.number ? `#${player.number}${player.name}` : player.name;
     }
 
     function getPlayerDisplayById(id) {
@@ -1242,11 +1211,10 @@
     }
 
     function renderHeaderAndSettings() {
-      // Populate multi-team selector dropdown in header
       const selectEl = document.getElementById('headerTeamSelect');
       selectEl.innerHTML = [
         ...appStore.teams.map(t =>
-          `<option value="${t.id}" ${t.id === state.id ? 'selected' : ''}>${escapeHtml(t.teamName || 'My Team')} (${t.players.length})</option>`
+          `<option value="${t.id}" ${t.id === state.id ? 'selected' : ''}>${escapeHtml(t.teamName \vert{}\vert{} 'My Team')} (${t.players.length})</option>`
         ),
         `<option value="__ADD_NEW_TEAM__">➕ Add New Team...</option>`
       ].join('');
@@ -1260,7 +1228,7 @@
 
       const preset = FORMATION_PRESETS[state.formationKey];
       const formLabel = preset ? preset.label : `${getTotalFieldSlots()}v${getTotalFieldSlots()}`;
-      document.getElementById('formatSummaryLabel').textContent = `${formLabel} • ${state.quarterMins}m Qtrs`;
+      document.getElementById('formatSummaryLabel').textContent = `${formLabel} •${state.quarterMins}m Qtrs`;
 
       const posBtn = document.getElementById('posToggleBtn');
       if (state.trackPositions) {
@@ -1338,8 +1306,7 @@
               <span class="mono text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
                 Q${g.quarter} (${g.clock})
               </span>
-              <span class="font-bold text-white">⚽ ${escapeHtml(scorerName)}</span>
-              ${assistName ? `<span class="text-slate-400">• 👟 Ast: <strong class="text-blue-300">${escapeHtml(assistName)}</strong></span>` : `<span class="text-slate-500 italic">(Unassisted)</span>`}
+              <span class="font-bold text-white">⚽ ${escapeHtml(scorerName)}</span>${assistName ? `<span class="text-slate-400">• 👟 Ast: <strong class="text-blue-300">${escapeHtml(assistName)}</strong></span>` : `<span class="text-slate-500 italic">(Unassisted)</span>`}
             </div>
             <button onclick="removeGoal('${g.id}')" class="text-slate-500 hover:text-rose-400 text-xs px-1.5" title="Undo Goal">✕</button>
           </div>
@@ -1466,7 +1433,7 @@
     }
 
     // =========================================================================
-    // ATTENDANCE, SCHEDULE & BALANCE TABLE RENDERING
+    // ATTENDANCE, SCHEDULE & EMBEDDED SHIFT TIMER RENDERING
     // =========================================================================
     function renderAttendance() {
       const presentCount = state.players.filter(p => p.present).length;
@@ -1508,105 +1475,216 @@
       const grid = document.getElementById('scheduleGrid');
       const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
       const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
+      const activePart = getActiveShiftPart();
 
       let html = '';
       for (let q = 1; q <= 4; q++) {
         const qShifts = state.computedShifts.filter(s => s.quarter === q);
         const isFullQtr = state.fullQuarterLocks[q];
+        const isActiveQuarter = (q === timer.quarter);
+        const isPastQuarter = (q < timer.quarter);
+        const isCollapsed = !!collapsedQuarters[q];
+
+        // Quarter Card Outer Styling
+        const qCardClasses = isActiveQuarter
+          ? 'bg-slate-900 border-2 border-emerald-500/80 rounded-2xl p-3.5 space-y-3 shadow-xl shadow-emerald-500/5'
+          : isPastQuarter
+            ? 'bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3 space-y-2 opacity-85'
+            : 'bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 shadow-lg';
+
+        // Summarize bench outs for collapsed view
+        const collapsedSummary = qShifts.map(s => {
+          const names = s.benchIds.map(id => playerMap[id]).filter(Boolean).join(', ') || 'None';
+          return state.shiftsPerQuarter === 2 ? `S${s.part}: ${names}` : `Out: ${names}`;
+        }).join(' • ');
 
         html += `
-          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 shadow-lg">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-              <div class="flex items-center gap-2">
-                <span class="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-extrabold text-xs">Quarter ${q}</span>
-                <span class="text-[11px] text-slate-400">${state.quarterMins} mins</span>
-              </div>
-              ${state.shiftsPerQuarter === 2 ? `
-                <button onclick="toggleFullQuarter(${q})"
-                  class="px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${
-                    isFullQtr
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-                  }">
-                  ${isFullQtr ? '🔒 Full Qtr' : 'Full Qtr (No Mid-Sub)'}
-                </button>
-              ` : ''}
-            </div>
+          <div class="${qCardClasses}">
+            <!-- Quarter Header (Clickable to Collapse / Expand) -->
+            <div class="flex items-center justify-between gap-2 ${isCollapsed ? '' : 'border-b border-slate-800 pb-2.5'}">
+              <button onclick="toggleQuarterCollapse(${q})" class="flex items-center gap-2 text-left flex-1 min-w-0 group">
+                <span class="px-2.5 py-0.5 rounded-lg font-extrabold text-xs shrink-0 ${
+                  isActiveQuarter
+                    ? 'bg-emerald-500 text-slate-950 shadow'
+                    : isPastQuarter
+                      ? 'bg-slate-800 text-slate-400'
+                      : 'bg-emerald-500/20 text-emerald-300'
+                }">
+                  Quarter ${q}
+                </span>
 
-            <div class="space-y-2">
-              ${qShifts.map(shift => {
-                const benchNames = shift.benchIds.map(id => playerMap[id] || '').filter(Boolean);
-                const shiftLabel = state.shiftsPerQuarter === 2
-                  ? (shift.part === 1 ? `1st ${shiftMins}m` : `2nd ${shiftMins}m`)
-                  : `Full ${state.quarterMins}m`;
+                ${isActiveQuarter ? `
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> Active
+                  </span>
+                ` : isPastQuarter ? `
+                  <span class="text-[11px] font-semibold text-slate-400">✅ Completed</span>
+                ` : `
+                  <span class="text-[11px] text-slate-400">${state.quarterMins} mins</span>
+                `}
 
-                const posGroups = { FWD: [], MID: [], DEF: [], GK: [] };
-                Object.entries(shift.positions || {}).forEach(([pid, pos]) => {
-                  if (!shift.benchIds.includes(pid) && playerMap[pid]) {
-                    if (!posGroups[pos]) posGroups[pos] = [];
-                    posGroups[pos].push(playerMap[pid]);
-                  }
-                });
+                ${isCollapsed ? `
+                  <span class="text-[11px] text-slate-400 truncate ml-1">(${escapeHtml(collapsedSummary)})</span>
+                ` : ''}
+              </button>
 
-                return `
-                  <div onclick="openEditModal(${shift.index})"
-                    class="group cursor-pointer rounded-xl p-2.5 border transition ${
-                      shift.locked
-                        ? 'bg-amber-500/10 border-amber-500/40'
-                        : 'bg-slate-950/60 border-slate-800/90 hover:border-slate-700'
+              <div class="flex items-center gap-1.5 shrink-0">
+                ${!isCollapsed && state.shiftsPerQuarter === 2 ? `
+                  <button onclick="toggleFullQuarter(${q})"
+                    class="px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${
+                      isFullQtr
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
                     }">
-                    <div class="flex items-center justify-between mb-1.5">
-                      <div class="flex items-center gap-1.5">
-                        <span class="text-xs font-bold text-slate-300">${shiftLabel}</span>
-                        ${shift.locked ? `<span class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">LOCKED</span>` : ''}
-                      </div>
-                      <span class="text-[11px] text-emerald-400 group-hover:underline font-medium">✏️ Edit Actual</span>
-                    </div>
+                    ${isFullQtr ? '🔒 Full Qtr' : 'Full Qtr (No Mid-Sub)'}
+                  </button>
+                ` : ''}
 
-                    <div class="flex items-center gap-1.5 flex-wrap">
-                      <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">🪑 Out:</span>
-                      ${benchNames.length > 0
-                        ? benchNames.map(n => `<span class="px-2 py-0.5 rounded-md text-xs font-bold pos-BENCH">${escapeHtml(n)}</span>`).join('')
-                        : `<span class="text-xs text-slate-500 italic">None (All Play)</span>`
-                      }
-                    </div>
-
-                    ${state.trackPositions ? `
-                      <div class="mt-2 pt-2 border-t border-slate-800/70 grid grid-cols-2 gap-1.5 text-[11px]">
-                        ${posGroups.FWD.length ? `
-                          <div class="flex items-center gap-1 flex-wrap">
-                            <span class="font-bold text-rose-400">⚔️ FWD:</span>
-                            <span class="text-slate-200 font-medium">${posGroups.FWD.map(escapeHtml).join(', ')}</span>
-                          </div>
-                        ` : ''}
-                        ${posGroups.MID.length ? `
-                          <div class="flex items-center gap-1 flex-wrap">
-                            <span class="font-bold text-blue-400">⚡ MID:</span>
-                            <span class="text-slate-200 font-medium">${posGroups.MID.map(escapeHtml).join(', ')}</span>
-                          </div>
-                        ` : ''}
-                        ${posGroups.DEF.length ? `
-                          <div class="flex items-center gap-1 flex-wrap">
-                            <span class="font-bold text-emerald-400">🛡️ DEF:</span>
-                            <span class="text-slate-200 font-medium">${posGroups.DEF.map(escapeHtml).join(', ')}</span>
-                          </div>
-                        ` : ''}
-                        ${posGroups.GK.length ? `
-                          <div class="flex items-center gap-1 flex-wrap">
-                            <span class="font-bold text-amber-400">🧤 GK:</span>
-                            <span class="text-slate-200 font-medium">${posGroups.GK.map(escapeHtml).join(', ')}</span>
-                          </div>
-                        ` : ''}
-                      </div>
-                    ` : ''}
-                  </div>
-                `;
-              }).join('')}
+                <button onclick="toggleQuarterCollapse(${q})"
+                  class="px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-[11px] font-bold border border-slate-700/80">
+                  ${isCollapsed ? '▼ Expand' : '▲ Hide'}
+                </button>
+              </div>
             </div>
+
+            <!-- Quarter Shifts Body -->
+            ${!isCollapsed ? ` <div class="grid grid-cols-1 ${state.shiftsPerQuarter === 2 ? 'md:grid-cols-2' : ''} gap-2.5"> ${qShifts.map(shift => { const isActiveShift = isActiveQuarter && (shift.part === activePart); const benchNames = shift.benchIds.map(id => playerMap[id] \vert{}\vert{} '').filter(Boolean); const shiftLabel = state.shiftsPerQuarter === 2 ? (shift.part === 1 ? `1st ${shiftMins}m Shift` : `2nd ${shiftMins}m Shift`)
+                    : `Full ${state.quarterMins}m Quarter`;
+
+                  const posGroups = { FWD: [], MID: [], DEF: [], GK: [] };
+                  Object.entries(shift.positions || {}).forEach(([pid, pos]) => {
+                    if (!shift.benchIds.includes(pid) && playerMap[pid]) {
+                      if (!posGroups[pos]) posGroups[pos] = [];
+                      posGroups[pos].push(playerMap[pid]);
+                    }
+                  });
+
+                  const shiftBoxClasses = isActiveShift
+                    ? 'ring-2 ring-emerald-400 bg-gradient-to-br from-emerald-950/50 via-slate-950 to-slate-950 border border-emerald-400/70 shadow-lg'
+                    : shift.locked
+                      ? 'bg-amber-500/10 border border-amber-500/40'
+                      : 'bg-slate-950/60 border border-slate-800/90 hover:border-slate-700';
+
+                  return `
+                    <div class="rounded-xl p-3 transition flex flex-col justify-between gap-2.5 ${shiftBoxClasses}">
+                      <div>
+                        <!-- Shift Top Bar -->
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                          <div class="flex items-center gap-1.5 flex-wrap">
+                            <span class="text-xs font-extrabold ${isActiveShift ? 'text-white' : 'text-slate-300'}">${shiftLabel}</span>${isActiveShift ? `
+                              <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500 text-slate-950 shadow">
+                                🟢 Active Shift
+                              </span>
+                            ` : `
+                              <button onclick="activateSpecificShift(${shift.quarter}, ${shift.part})"
+                                class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 font-semibold"
+                                title="Move timer to this shift">
+                                Set Active
+                              </button>
+                            `}
+                            ${shift.locked ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">LOCKED</span>` : ''}
+                          </div>
+                          <button onclick="openEditModal(${shift.index})"
+                            class="text-xs text-emerald-400 hover:underline font-bold shrink-0 px-1.5 py-0.5 rounded hover:bg-slate-800/60">
+                            ✏️ Edit Actual
+                          </button>
+                        </div>
+
+                        <!-- EMBEDDED LIVE TIMER HUD (Rendered inside the Active Shift Box) -->
+                        ${isActiveShift ? `
+                          <div class="mb-3 p-3 rounded-xl bg-slate-900/95 border border-emerald-500/40 shadow-inner space-y-2.5">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                              <div class="flex items-baseline gap-2.5">
+                                <div id="activeShiftTimerDisplay" class="mono text-4xl font-extrabold tracking-tight text-white">08:00</div>
+                                <span id="activeShiftTimerSublabel" class="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
+                                  Ready
+                                </span>
+                              </div>
+                              <div class="flex items-center gap-1.5">
+                                <button onclick="toggleTimer()" id="activeShiftStartBtn"
+                                  class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs transition shadow-md">
+                                  ▶ Start
+                                </button>
+                                <button onclick="playWhistle(1)"
+                                  class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700"
+                                  title="Test Referee Whistle">
+                                  📣
+                                </button>
+                              </div>
+                            </div>
+
+                            <!-- Shift Progress Bar -->
+                            <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+                              <div id="activeShiftProgressBar" class="h-full bg-emerald-400 transition-all duration-300" style="width: 100%"></div>
+                            </div>
+
+                            <!-- Quick Clock Sync Controls -->
+                            <div class="flex flex-wrap items-center justify-between gap-1.5 pt-0.5">
+                              <div class="flex items-center gap-1">
+                                <button onclick="adjustTimer(-15)" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 border border-slate-700">-15s</button>
+                                <button onclick="adjustTimer(15)" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 border border-slate-700">+15s</button>
+                                ${state.shiftsPerQuarter === 2 && shift.part === 1 ? `
+                                  <button onclick="syncMidQuarter()" class="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold border border-amber-500/40">
+                                    ⏭️ Sync 2nd Shift
+                                  </button>
+                                ` : ''}
+                              </div>
+                              <button onclick="resetTimer()" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-[11px] font-bold border border-slate-700">
+                                ↺ Reset Q${q}
+                              </button>
+                            </div>
+                          </div>
+                        ` : ''}
+
+                        <!-- Sitting Out Row -->
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">🪑 Out:</span>
+                          ${benchNames.length > 0
+                            ? benchNames.map(n => `<span class="px-2 py-0.5 rounded-md text-xs font-bold pos-BENCH">${escapeHtml(n)}</span>`).join('')
+                            : `<span class="text-xs text-slate-500 italic">None (All Play)</span>`
+                          }
+                        </div>
+
+                        <!-- Field Positions Breakdown -->
+                        ${state.trackPositions ? `
+                          <div class="mt-2 pt-2 border-t border-slate-800/70 grid grid-cols-2 gap-1.5 text-[11px]">
+                            ${posGroups.FWD.length ? `
+                              <div class="flex items-center gap-1 flex-wrap">
+                                <span class="font-bold text-rose-400">⚔️ FWD:</span>
+                                <span class="text-slate-200 font-medium">${posGroups.FWD.map(escapeHtml).join(', ')}</span>
+                              </div>
+                            ` : ''}
+                            ${posGroups.MID.length ? `
+                              <div class="flex items-center gap-1 flex-wrap">
+                                <span class="font-bold text-blue-400">⚡ MID:</span>
+                                <span class="text-slate-200 font-medium">${posGroups.MID.map(escapeHtml).join(', ')}</span>
+                              </div>
+                            ` : ''}
+                            ${posGroups.DEF.length ? `
+                              <div class="flex items-center gap-1 flex-wrap">
+                                <span class="font-bold text-emerald-400">🛡️ DEF:</span>
+                                <span class="text-slate-200 font-medium">${posGroups.DEF.map(escapeHtml).join(', ')}</span>
+                              </div>
+                            ` : ''}
+                            ${posGroups.GK.length ? `
+                              <div class="flex items-center gap-1 flex-wrap">
+                                <span class="font-bold text-amber-400">🧤 GK:</span>
+                                <span class="text-slate-200 font-medium">${posGroups.GK.map(escapeHtml).join(', ')}</span>
+                              </div>
+                            ` : ''}
+                          </div>
+                        ` : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            ` : ''}
           </div>
         `;
       }
       grid.innerHTML = html;
+      renderTimerUI();
     }
 
     function renderBalanceTable() {
@@ -1652,8 +1730,7 @@
         return `
           <tr>
             <td class="py-2 pr-2 font-bold text-white">${escapeHtml(formatPlayerBadge(p))}</td>
-            <td class="py-2 px-2 text-center mono">${fmtCell('BENCH')}</td>
-            ${state.trackPositions ? `
+            <td class="py-2 px-2 text-center mono">${fmtCell('BENCH')}</td>${state.trackPositions ? `
               <td class="py-2 px-2 text-center mono text-rose-300">${fmtCell('FWD')}</td>
               <td class="py-2 px-2 text-center mono text-blue-300">${fmtCell('MID')}</td>
               <td class="py-2 px-2 text-center mono text-emerald-300">${fmtCell('DEF')}</td>
@@ -1679,10 +1756,7 @@
       });
 
       const diff = gf - ga;
-      document.getElementById('statRecord').textContent = `${wins}-${losses}-${draws}`;
-      document.getElementById('statGoalsFor').textContent = gf;
-      document.getElementById('statGoalsAgainst').textContent = ga;
-      document.getElementById('statGoalDiff').textContent = diff > 0 ? `+${diff}` : String(diff);
+      document.getElementById('statRecord').textContent = `${wins}-${losses}-${draws}`; document.getElementById('statGoalsFor').textContent = gf; document.getElementById('statGoalsAgainst').textContent = ga; document.getElementById('statGoalDiff').textContent = diff > 0 ? `+${diff}` : String(diff);
 
       const statsBody = document.getElementById('seasonStatsTableBody');
       if (state.players.length === 0) {
@@ -1701,7 +1775,7 @@
           const pts = g + a;
           const gp = p.prior.gamesPlayed || 0;
           const bench = p.prior.BENCH || 0;
-          const posBreakdown = `${p.prior.FWD || 0} / ${p.prior.MID || 0} / ${p.prior.DEF || 0} / ${p.prior.GK || 0}`;
+          const posBreakdown = `${p.prior.FWD \vert{}\vert{} 0} /${p.prior.MID || 0} / ${p.prior.DEF \vert{}\vert{} 0} /${p.prior.GK || 0}`;
 
           return `
             <tr>
@@ -1743,7 +1817,7 @@
               <div class="flex items-center gap-2">
                 <span class="px-2 py-0.5 rounded-md text-xs font-extrabold border ${badgeClass}">${resChar}</span>
                 <span class="font-extrabold text-sm text-white">
-                  ${escapeHtml(game.teamName)} <span class="text-emerald-400 mono">${game.ourScore}</span> - <span class="text-slate-300 mono">${game.oppScore}</span> ${escapeHtml(game.opponent)}
+                  ${escapeHtml(game.teamName)} <span class="text-emerald-400 mono">${game.ourScore}</span> - <span class="text-slate-300 mono">${game.oppScore}</span>${escapeHtml(game.opponent)}
                 </span>
               </div>
               <div class="flex items-center gap-2">
@@ -1756,8 +1830,7 @@
               <div class="pt-1.5 border-t border-slate-800/70 flex flex-wrap gap-1.5">
                 ${game.goals.map(gl => `
                   <span class="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-[11px] text-slate-300">
-                    ⚽ <strong>${escapeHtml(gl.scorerLabel)}</strong>
-                    ${gl.assistLabel ? `<span class="text-slate-400">(Ast: ${escapeHtml(gl.assistLabel)})</span>` : ''}
+                    ⚽ <strong>${escapeHtml(gl.scorerLabel)}</strong>${gl.assistLabel ? `<span class="text-slate-400">(Ast: ${escapeHtml(gl.assistLabel)})</span>` : ''}
                   </span>
                 `).join('')}
               </div>
@@ -1821,6 +1894,8 @@
       };
       state.lockedShifts = {};
       state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
+      timer.quarter = 1;
+      collapsedQuarters = { 1: false, 2: false, 3: false, 4: false };
       resetTimer();
       recalculateSchedule();
       switchMainTab('stats');
@@ -1851,25 +1926,9 @@
             : benchNames.slice(0, -1).join(', ') + ' and ' + benchNames[benchNames.length - 1];
 
         const prefix = state.shiftsPerQuarter === 1
-          ? `Out ${qOrd}`
-          : (s.part === 1 ? `Out ${qOrd}` : `2nd part of ${qOrd}`);
-
-        if (state.smsStyle === 'compact' || !state.trackPositions) {
-          messages.push(`${prefix} ${benchStr}`);
-        } else {
-          const groups = { FWD: [], MID: [], DEF: [], GK: [] };
-          Object.entries(s.positions || {}).forEach(([pid, pos]) => {
-            if (!s.benchIds.includes(pid) && playerMap[pid]) {
-              groups[pos].push(playerMap[pid]);
-            }
-          });
-          const posParts = [];
-          if (groups.FWD.length) posParts.push(`FWD: ${groups.FWD.join('/')}`);
-          if (groups.MID.length) posParts.push(`MID: ${groups.MID.join('/')}`);
-          if (groups.DEF.length) posParts.push(`DEF: ${groups.DEF.join('/')}`);
-          if (groups.GK.length)  posParts.push(`GK: ${groups.GK.join('/')}`);
-
-          messages.push(`${prefix}: ${benchStr} | ${posParts.join(' • ')}`);
+          ? `Out ${qOrd}` : (s.part === 1 ? `Out ${qOrd}` : `2nd part of ${qOrd}`);  if (state.smsStyle === 'compact' \vert{}\vert{} !state.trackPositions) { messages.push(`${prefix} ${benchStr}`); } else { const groups = { FWD: [], MID: [], DEF: [], GK: [] }; Object.entries(s.positions \vert{}\vert{} {}).forEach(([pid, pos]) => { if (!s.benchIds.includes(pid) && playerMap[pid]) { groups[pos].push(playerMap[pid]); } }); const posParts = []; if (groups.FWD.length) posParts.push(`FWD: ${groups.FWD.join('/')}`);
+          if (groups.MID.length) posParts.push(`MID: ${groups.MID.join('/')}`); if (groups.DEF.length) posParts.push(`DEF: ${groups.DEF.join('/')}`);
+          if (groups.GK.length)  posParts.push(`GK: ${groups.GK.join('/')}`);  messages.push(`${prefix}: ${benchStr} \vert{}${posParts.join(' • ')}`);
         }
       });
 
@@ -1938,449 +1997,4 @@
 
       const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
       const partLabel = state.shiftsPerQuarter === 2
-        ? (shift.part === 1 ? `1st ${shiftMins}m` : `2nd ${shiftMins}m`)
-        : `Full ${state.quarterMins}m`;
-
-      document.getElementById('modalTitle').textContent = `Edit Quarter ${shift.quarter} • ${partLabel}`;
-      document.getElementById('editModal').classList.remove('hidden');
-      renderModalPlayers();
-    }
-
-    function closeEditModal() {
-      editingShiftIdx = null;
-      document.getElementById('editModal').classList.add('hidden');
-    }
-
-    function renderModalPlayers() {
-      const presentPlayers = state.players.filter(p => p.present);
-      const targetBench = Math.max(0, presentPlayers.length - getTotalFieldSlots());
-
-      document.getElementById('modalBenchCounter').textContent =
-        `Sitting Out: ${modalDraft.benchIds.length} (Recommended: ${targetBench})`;
-
-      const activeZones = ['FWD', 'MID', 'DEF'];
-      if ((state.slots.GK || 0) > 0) activeZones.push('GK');
-
-      const listEl = document.getElementById('modalPlayerList');
-      listEl.innerHTML = presentPlayers.map(p => {
-        const isSitting = modalDraft.benchIds.includes(p.id);
-        const currentPos = modalDraft.positions[p.id] || 'MID';
-
-        return `
-          <div class="flex items-center justify-between bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5">
-            <div class="flex items-center gap-2.5">
-              <button onclick="toggleModalBench('${p.id}')"
-                class="px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                  isSitting
-                    ? 'pos-BENCH'
-                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                }">
-                ${isSitting ? '🪑 Sitting Out' : '🏃 On Field'}
-              </button>
-              <span class="font-bold text-sm text-white">${escapeHtml(formatPlayerBadge(p))}</span>
-            </div>
-
-            ${!isSitting && state.trackPositions ? `
-              <div class="flex items-center gap-1">
-                ${activeZones.map(z => `
-                  <button onclick="setModalPlayerPos('${p.id}', '${z}')"
-                    class="px-2 py-1 rounded-md text-xs font-extrabold transition ${
-                      currentPos === z ? `pos-${z}` : 'bg-slate-900 text-slate-500 border border-slate-800'
-                    }">
-                    ${z}
-                  </button>
-                `).join('')}
-              </div>
-            ` : `
-              <span class="text-xs text-slate-500">${isSitting ? 'On Bench' : 'Playing'}</span>
-            `}
-          </div>
-        `;
-      }).join('');
-    }
-
-    function toggleModalBench(playerId) {
-      const idx = modalDraft.benchIds.indexOf(playerId);
-      if (idx >= 0) {
-        modalDraft.benchIds.splice(idx, 1);
-        if (!modalDraft.positions[playerId]) modalDraft.positions[playerId] = 'MID';
-      } else {
-        modalDraft.benchIds.push(playerId);
-      }
-      renderModalPlayers();
-    }
-
-    function setModalPlayerPos(playerId, pos) {
-      modalDraft.positions[playerId] = pos;
-      renderModalPlayers();
-    }
-
-    function saveModalShift() {
-      if (editingShiftIdx === null) return;
-      state.lockedShifts[editingShiftIdx] = {
-        benchIds: [...modalDraft.benchIds],
-        positions: { ...modalDraft.positions }
-      };
-      closeEditModal();
-      recalculateSchedule();
-      renderAll();
-    }
-
-    function unlockCurrentModalShift() {
-      if (editingShiftIdx === null) return;
-      delete state.lockedShifts[editingShiftIdx];
-      closeEditModal();
-      recalculateSchedule();
-      renderAll();
-    }
-
-    // =========================================================================
-    // ROSTER, ATTENDANCE & FORMAT HANDLERS
-    // =========================================================================
-    function addPlayerFromOnboarding() {
-      const numEl = document.getElementById('onboardPlayerNum');
-      const nameEl = document.getElementById('onboardPlayerName');
-      const teamEl = document.getElementById('onboardTeamNameInput');
-
-      if (teamEl && teamEl.value.trim()) {
-        state.teamName = teamEl.value.trim();
-      }
-
-      const name = (nameEl.value || '').trim();
-      const number = (numEl.value || '').trim();
-      if (!name) return;
-
-      state.players.push({
-        id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        name,
-        number,
-        present: true,
-        prior: { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 }
-      });
-
-      numEl.value = '';
-      nameEl.value = '';
-      nameEl.focus();
-      recalculateSchedule();
-      renderAll();
-    }
-
-    function addPlayer() {
-      const numInput = document.getElementById('newPlayerNumberInput');
-      const nameInput = document.getElementById('newPlayerInput');
-      const name = (nameInput.value || '').trim();
-      const number = (numInput.value || '').trim();
-      if (!name) return;
-
-      state.players.push({
-        id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        name,
-        number,
-        present: true,
-        prior: { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 }
-      });
-      numInput.value = '';
-      nameInput.value = '';
-      nameInput.focus();
-      recalculateSchedule();
-      renderAll();
-    }
-
-    function updatePlayerNumber(playerId, newNum) {
-      const p = state.players.find(x => x.id === playerId);
-      if (p) {
-        p.number = (newNum || '').trim();
-        saveState();
-        renderAll();
-      }
-    }
-
-    function updatePlayerName(playerId, newName) {
-      const p = state.players.find(x => x.id === playerId);
-      if (p && newName.trim()) {
-        p.name = newName.trim();
-        saveState();
-        renderAll();
-      }
-    }
-
-    function removePlayer(id) {
-      state.players = state.players.filter(p => p.id !== id);
-      recalculateSchedule();
-      renderAll();
-    }
-
-    function togglePositionMode() {
-      state.trackPositions = !state.trackPositions;
-      saveState();
-      renderAll();
-    }
-
-    function toggleDrawer(id) {
-      document.getElementById(id).classList.toggle('hidden');
-    }
-
-    function togglePlayerPresence(playerId) {
-      const p = state.players.find(x => x.id === playerId);
-      if (p) {
-        p.present = !p.present;
-        recalculateSchedule();
-        renderAll();
-      }
-    }
-
-    function setAllAttendance(val) {
-      state.players.forEach(p => { p.present = val; });
-      recalculateSchedule();
-      renderAll();
-    }
-
-    function rotateStarterOrder() {
-      if (state.players.length > 1) {
-        const first = state.players.shift();
-        state.players.push(first);
-        recalculateSchedule();
-        renderAll();
-      }
-    }
-
-    function handleFormationChange(presetKey) {
-      const preset = FORMATION_PRESETS[presetKey];
-      if (preset) {
-        state.formationKey = presetKey;
-        state.slots = { ...preset.slots };
-        state.lockedShifts = {};
-        recalculateSchedule();
-        renderAll();
-      }
-    }
-
-    function adjustSlot(zone, delta) {
-      state.slots[zone] = Math.max(0, (state.slots[zone] || 0) + delta);
-      recalculateSchedule();
-      renderAll();
-    }
-
-    function handleTimingChange() {
-      state.quarterMins = parseInt(document.getElementById('quarterMinsSelect').value, 10) || 8;
-      state.shiftsPerQuarter = parseInt(document.getElementById('shiftsPerQtrSelect').value, 10) || 2;
-      state.lockedShifts = {};
-      resetTimer();
-      recalculateSchedule();
-      renderAll();
-    }
-
-    function toggleFullQuarter(q) {
-      state.fullQuarterLocks[q] = !state.fullQuarterLocks[q];
-      recalculateSchedule();
-      renderAll();
-    }
-
-    function adjustPrior(playerId, zone, delta) {
-      const p = state.players.find(x => x.id === playerId);
-      if (p) {
-        p.prior[zone] = Math.max(0, (p.prior[zone] || 0) + delta);
-        recalculateSchedule();
-        renderAll();
-      }
-    }
-
-    function resetSeasonHistory() {
-      state.players.forEach(p => {
-        p.prior = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 };
-      });
-      state.lockedShifts = {};
-      recalculateSchedule();
-      renderAll();
-    }
-
-    function clearAllLocks() {
-      state.lockedShifts = {};
-      state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
-      recalculateSchedule();
-      renderAll();
-    }
-
-    // =========================================================================
-    // SIDELINE TIMER & WEB AUDIO REFEREE WHISTLE
-    // =========================================================================
-    function renderTimerUI() {
-      const totalSec = state.quarterMins * 60;
-      const midSec = Math.floor(totalSec / 2);
-      const mins = Math.floor(timer.secondsLeft / 60);
-      const secs = timer.secondsLeft % 60;
-
-      document.getElementById('timerDisplay').textContent =
-        `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
-      for (let q = 1; q <= 4; q++) {
-        const btn = document.getElementById('qTab' + q);
-        btn.className = q === timer.quarter
-          ? 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950'
-          : 'px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400 hover:text-white';
-      }
-
-      const startBtn = document.getElementById('timerStartBtn');
-      if (timer.running) {
-        startBtn.textContent = '⏸ Pause';
-        startBtn.className = 'px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-sm transition';
-      } else {
-        startBtn.textContent = '▶ Start';
-        startBtn.className = 'px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm transition shadow-lg shadow-emerald-500/20';
-      }
-
-      const badge = document.getElementById('timerShiftBadge');
-      if (state.shiftsPerQuarter === 2) {
-        const isFirstHalf = timer.secondsLeft > midSec;
-        badge.textContent = isFirstHalf
-          ? `Q${timer.quarter} • 1st Shift`
-          : `Q${timer.quarter} • 2nd Shift`;
-
-        const p1 = isFirstHalf ? ((timer.secondsLeft - midSec) / midSec) * 100 : 0;
-        const p2 = isFirstHalf ? 100 : (timer.secondsLeft / midSec) * 100;
-        document.getElementById('progressHalf1').style.width = `${Math.max(0, Math.min(100, p1))}%`;
-        document.getElementById('progressHalf2').style.width = `${Math.max(0, Math.min(100, p2))}%`;
-      } else {
-        badge.textContent = `Q${timer.quarter} • Full Quarter`;
-        const pct = (timer.secondsLeft / totalSec) * 100;
-        document.getElementById('progressHalf1').style.width = `${pct}%`;
-        document.getElementById('progressHalf2').style.width = `${pct}%`;
-      }
-    }
-
-    function toggleTimer() {
-      if (timer.running) {
-        clearInterval(timer.intervalId);
-        timer.running = false;
-      } else {
-        timer.running = true;
-        timer.intervalId = setInterval(tickTimer, 1000);
-      }
-      renderTimerUI();
-    }
-
-    function tickTimer() {
-      if (timer.secondsLeft > 0) {
-        timer.secondsLeft--;
-        const midSec = Math.floor((state.quarterMins * 60) / 2);
-
-        if (state.shiftsPerQuarter === 2 && timer.secondsLeft === midSec && !timer.midAlertFired) {
-          timer.midAlertFired = true;
-          playWhistle(2);
-          showSubAlert(timer.quarter, 2);
-        }
-
-        if (timer.secondsLeft === 0) {
-          clearInterval(timer.intervalId);
-          timer.running = false;
-          playWhistle(3);
-          if (timer.quarter < 4) {
-            showSubAlert(timer.quarter + 1, 1);
-          }
-        }
-        renderTimerUI();
-      }
-    }
-
-    function setTimerQuarter(q) {
-      timer.quarter = q;
-      resetTimer();
-    }
-
-    function adjustTimer(deltaSec) {
-      const maxSec = state.quarterMins * 60;
-      timer.secondsLeft = Math.max(0, Math.min(maxSec, timer.secondsLeft + deltaSec));
-      renderTimerUI();
-    }
-
-    function syncMidQuarter() {
-      timer.secondsLeft = Math.floor((state.quarterMins * 60) / 2);
-      timer.midAlertFired = true;
-      showSubAlert(timer.quarter, 2);
-      renderTimerUI();
-    }
-
-    function resetTimer() {
-      clearInterval(timer.intervalId);
-      timer.running = false;
-      timer.secondsLeft = state.quarterMins * 60;
-      timer.midAlertFired = false;
-      renderTimerUI();
-    }
-
-    function showSubAlert(quarter, part) {
-      const targetShift = state.computedShifts.find(s => s.quarter === quarter && s.part === part);
-      if (!targetShift) return;
-
-      const prevShift = targetShift.index > 0 ? state.computedShifts[targetShift.index - 1] : null;
-      const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
-
-      const goingOut = targetShift.benchIds.map(id => playerMap[id]).filter(Boolean);
-      const comingIn = prevShift
-        ? prevShift.benchIds.filter(id => !targetShift.benchIds.includes(id)).map(id => playerMap[id])
-        : [];
-
-      const banner = document.getElementById('subAlertBanner');
-      const content = document.getElementById('subAlertContent');
-
-      let html = `
-        <div><strong>🏃 Coming ON Field:</strong> ${comingIn.length ? comingIn.join(', ') : 'Starting Lineup'}</div>
-        <div><strong>🪑 Going to Bench:</strong> ${goingOut.length ? goingOut.join(', ') : 'None'}</div>
-      `;
-
-      if (state.trackPositions) {
-        const posSummary = Object.entries(targetShift.positions || {})
-          .filter(([pid]) => !targetShift.benchIds.includes(pid) && playerMap[pid])
-          .map(([pid, pos]) => `${playerMap[pid]} (${pos})`)
-          .join(' • ');
-        html += `<div class="pt-1 text-emerald-300"><strong>📍 Field Spots:</strong> ${posSummary}</div>`;
-      }
-
-      content.innerHTML = html;
-      banner.classList.remove('hidden');
-    }
-
-    function playWhistle(blasts = 2) {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        for (let i = 0; i < blasts; i++) {
-          const start = ctx.currentTime + i * 0.35;
-          const dur = i === blasts - 1 ? 0.38 : 0.22;
-          const osc1 = ctx.createOscillator();
-          const osc2 = ctx.createOscillator();
-          const gain = ctx.createGain();
-
-          osc1.type = 'triangle';
-          osc2.type = 'sine';
-          osc1.frequency.setValueAtTime(2750, start);
-          osc2.frequency.setValueAtTime(2830, start);
-
-          gain.gain.setValueAtTime(0.01, start);
-          gain.gain.exponentialRampToValueAtTime(0.35, start + 0.03);
-          gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
-
-          osc1.connect(gain);
-          osc2.connect(gain);
-          gain.connect(ctx.destination);
-
-          osc1.start(start);
-          osc2.start(start);
-          osc1.stop(start + dur);
-          osc2.stop(start + dur);
-        }
-        if (navigator.vibrate) navigator.vibrate([200, 100, 250]);
-      } catch (e) {
-        console.warn('AudioContext unavailable:', e);
-      }
-    }
-
-    function escapeHtml(str) {
-      return String(str).replace(/[&<>"']/g, m => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-      }[m]));
-    }
-
-    window.addEventListener('DOMContentLoaded', loadState);
-  </script>
-</body>
-</html>
+        ? (shift.part === 1 ? `1st ${shiftMins}m` : `2nd ${shiftMins}
