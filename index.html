@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Sideline Pro — Soccer Sub, Position & Stats Manager</title>
 
-  <!-- Single-File PWA Meta Tags & Inline Manifest -->
+  <!-- PWA Meta Tags & Manifest -->
   <meta name="theme-color" content="#0f172a" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Sideline Pro" />
+  <link rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230f172a'/%3E%3Crect x='24' y='24' width='464' height='464' rx='92' fill='%2310b981' fill-opacity='0.15' stroke='%2310b981' stroke-width='16'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-size='280'%3E%E2%9A%BD%3C/text%3E%3C/svg%3E" />
   <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230f172a'/%3E%3Crect x='24' y='24' width='464' height='464' rx='92' fill='%2310b981' fill-opacity='0.15' stroke='%2310b981' stroke-width='16'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-size='280'%3E%E2%9A%BD%3C/text%3E%3C/svg%3E" />
-  <link rel="manifest" href='data:application/manifest+json,{"name":"Sideline Pro - Soccer Manager","short_name":"Sideline Pro","start_url":".","display":"standalone","background_color":"#0f172a","theme_color":"#0f172a","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 512 512%27%3E%3Crect width=%27512%27 height=%27512%27 rx=%27112%27 fill=%27%230f172a%27/%3E%3Ctext x=%2750%25%27 y=%2754%25%27 dominant-baseline=%27middle%27 text-anchor=%27middle%27 font-size=%27300%27%3E%E2%9A%BD%3C/text%3E%3C/svg%3E","sizes":"512x512","type":"image/svg+xml","purpose":"any maskable"}]}' />
 
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
@@ -31,6 +31,8 @@
     .pos-DEF { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); }
     .pos-GK  { background: rgba(245, 158, 11, 0.22); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.5); }
     .pos-BENCH { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.35); }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: #ffffff; }
   </style>
 </head>
 <body class="min-h-screen pb-24 selection:bg-emerald-500 selection:text-white">
@@ -60,6 +62,11 @@
         </div>
 
         <div class="flex items-center gap-1.5 shrink-0">
+          <button onclick="triggerPwaInstall()" id="pwaInstallBtn"
+            class="hidden px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition items-center gap-1"
+            title="Install App">
+            <span>📲 Install</span>
+          </button>
           <button onclick="shareAppStateLink()" id="shareLinkBtn"
             class="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold transition flex items-center gap-1"
             title="Share a link containing this team's roster, rotation, and stats">
@@ -93,7 +100,7 @@
 
   <main class="max-w-2xl mx-auto px-3 pt-3 space-y-4">
 
-    <!-- Shared Link Import Banner (Shown when loaded from a #s= link) -->
+    <!-- Shared Link Import Banner -->
     <div id="sharedImportBanner" class="hidden bg-indigo-950/90 border border-indigo-400/50 rounded-2xl p-3.5 flex items-center justify-between gap-2 text-xs text-indigo-100 shadow-lg">
       <div>
         <strong class="text-white">📥 Shared Team Data Loaded!</strong>
@@ -223,11 +230,11 @@
           </select>
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-400 mb-1">Shifts / Qtr</label>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Sub Mode (Weight)</label>
           <select id="shiftsPerQtrSelect" onchange="handleTimingChange()"
             class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white">
-            <option value="2" selected>2 (Mid-Qtr Sub)</option>
-            <option value="1">1 (Full Qtr)</option>
+            <option value="2" selected>2 Shifts/Qtr (0.5 each)</option>
+            <option value="1">Full Quarters (1.0 each)</option>
           </select>
         </div>
       </div>
@@ -236,7 +243,7 @@
       <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3">
         <div class="text-xs font-semibold text-slate-400 mb-2 flex items-center justify-between">
           <span>Active On-Field Slots (<span id="totalFieldSlotsLabel">5</span> players on field)</span>
-          <span class="text-[11px] text-slate-500">Auto-rotates every shift</span>
+          <span class="text-[11px] text-slate-500">Full Qtr = 1.0 • Shift = 0.5</span>
         </div>
         <div class="grid grid-cols-4 gap-2 text-center">
           <div class="bg-slate-900 border border-slate-800 rounded-lg p-2">
@@ -352,7 +359,7 @@
         </div>
       </section>
 
-      <!-- Built-In Sideline Timer & Whistle Alert Card -->
+      <!-- Built-In Sideline Timer, Progress & Live In-Play Lineup Card -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
         <div class="flex items-center justify-between mb-2">
           <div class="flex items-center gap-1.5">
@@ -384,7 +391,7 @@
             </button>
             <button onclick="adjustTimer(-15)" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold border border-slate-700">-15s</button>
             <button onclick="adjustTimer(15)" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold border border-slate-700">+15s</button>
-            <button onclick="syncMidQuarter()" class="px-2.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40">
+            <button onclick="syncMidQuarter()" id="syncMidBtn" class="px-2.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40">
               Sync Mid
             </button>
             <button onclick="resetTimer()" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-bold border border-slate-700">
@@ -393,13 +400,18 @@
           </div>
         </div>
 
-        <!-- Dual Progress Bar -->
-        <div class="grid grid-cols-2 gap-1.5 mt-2">
+        <!-- Progress Bar (Split when 2 shifts are live; Single bar when Full Quarter is live) -->
+        <div id="timerProgressSplit" class="grid grid-cols-2 gap-1.5 mt-2">
           <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
             <div id="progressHalf1" class="h-full bg-emerald-500 transition-all duration-300" style="width: 100%"></div>
           </div>
           <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
             <div id="progressHalf2" class="h-full bg-amber-400 transition-all duration-300" style="width: 100%"></div>
+          </div>
+        </div>
+        <div id="timerProgressSingle" class="hidden mt-2">
+          <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div id="progressFullBar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 100%"></div>
           </div>
         </div>
 
@@ -411,16 +423,24 @@
           </div>
           <div id="subAlertContent" class="text-xs mt-1.5 space-y-1"></div>
         </div>
+
+        <!-- CURRENT IN-PLAY ROTATION & POSITIONS DISPLAY -->
+        <div id="liveInPlayContainer" class="mt-3.5 pt-3 border-t border-slate-800"></div>
       </section>
 
-      <!-- Roll Call / Attendance Bar -->
+      <!-- Roll Call / Attendance Bar with Sorting -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
-        <div class="flex items-center justify-between mb-2.5">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
           <div>
             <h2 class="font-bold text-sm text-white">📋 Roll Call (Tap Player to Toggle Present)</h2>
             <p id="attendanceSubtext" class="text-xs text-slate-400">0 present</p>
           </div>
-          <div class="flex gap-1.5">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[11px]">
+              <button onclick="setRosterSort('order')" id="sortBtnOrder" class="px-2 py-1 rounded-md font-semibold">Order</button>
+              <button onclick="setRosterSort('name')" id="sortBtnName" class="px-2 py-1 rounded-md font-semibold">Name</button>
+              <button onclick="setRosterSort('number')" id="sortBtnNumber" class="px-2 py-1 rounded-md font-semibold">#</button>
+            </div>
             <button onclick="setAllAttendance(true)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700">
               Select All
             </button>
@@ -436,30 +456,33 @@
       <section class="space-y-3">
         <div class="flex items-center justify-between px-1">
           <h2 class="font-bold text-sm text-white">🔄 Game Rotation & Field Positions</h2>
-          <span class="text-xs text-slate-400">Tap any shift to edit actual subs/positions</span>
+          <span class="text-xs text-slate-400">Active shift highlighted • Tap any shift to edit</span>
         </div>
         <div id="scheduleGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
       </section>
 
-      <!-- Playtime & Position Fairness Matrix -->
+      <!-- Playtime & Position Fairness Matrix (Sortable Columns) -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
         <div class="flex items-center justify-between mb-3">
           <div>
-            <h2 class="font-bold text-sm text-white">⚖️ Playtime & Position Balance</h2>
-            <p class="text-xs text-slate-400">Counts show <span class="text-white font-semibold">Today's Game</span> (and cumulative season total in parentheses)</p>
+            <h2 class="font-bold text-sm text-white">⚖️ Playtime & Position Balance (Quarters)</h2>
+            <p class="text-xs text-slate-400">
+              Full Qtr = <span class="text-white font-semibold">1</span> • Shift = <span class="text-white font-semibold">0.5</span> • Tap any column header to sort
+            </p>
           </div>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse text-xs">
             <thead>
               <tr class="border-b border-slate-800 text-slate-400">
-                <th class="py-2 pr-2 font-semibold">Player</th>
-                <th class="py-2 px-2 text-center font-semibold text-slate-300">🪑 Bench</th>
-                <th class="py-2 px-2 text-center font-semibold text-rose-400 pos-col">⚔️ FWD</th>
-                <th class="py-2 px-2 text-center font-semibold text-blue-400 pos-col">⚡ MID</th>
-                <th class="py-2 px-2 text-center font-semibold text-emerald-400 pos-col">🛡️ DEF</th>
-                <th class="py-2 px-2 text-center font-semibold text-amber-400 pos-col" id="gkHeaderCell">🧤 GK</th>
-                <th class="py-2 pl-2 text-right font-semibold text-emerald-300">Play %</th>
+                <th onclick="toggleBalanceSort('number')" class="sortable py-2 pr-1 font-semibold w-10"># <span id="balSort_number"></span></th>
+                <th onclick="toggleBalanceSort('name')" class="sortable py-2 pr-2 font-semibold">Player <span id="balSort_name"></span></th>
+                <th onclick="toggleBalanceSort('BENCH')" class="sortable py-2 px-2 text-center font-semibold text-slate-300">🪑 Bench <span id="balSort_BENCH"></span></th>
+                <th onclick="toggleBalanceSort('FWD')" class="sortable py-2 px-2 text-center font-semibold text-rose-400 pos-col">⚔️ FWD <span id="balSort_FWD"></span></th>
+                <th onclick="toggleBalanceSort('MID')" class="sortable py-2 px-2 text-center font-semibold text-blue-400 pos-col">⚡ MID <span id="balSort_MID"></span></th>
+                <th onclick="toggleBalanceSort('DEF')" class="sortable py-2 px-2 text-center font-semibold text-emerald-400 pos-col">🛡️ DEF <span id="balSort_DEF"></span></th>
+                <th onclick="toggleBalanceSort('GK')" class="sortable py-2 px-2 text-center font-semibold text-amber-400 pos-col" id="gkHeaderCell">🧤 GK <span id="balSort_GK"></span></th>
+                <th onclick="toggleBalanceSort('playPct')" class="sortable py-2 pl-2 text-right font-semibold text-emerald-300">Play % <span id="balSort_playPct"></span></th>
               </tr>
             </thead>
             <tbody id="balanceTableBody" class="divide-y divide-slate-800/60"></tbody>
@@ -496,7 +519,7 @@
       <section class="bg-gradient-to-r from-indigo-950/80 to-slate-900 border border-indigo-500/40 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
         <div>
           <h3 class="font-bold text-sm text-white">🏁 Finished Today's Match?</h3>
-          <p class="text-xs text-slate-300">Save final score, goals, assists, and shift counts to your Season History & Stats.</p>
+          <p class="text-xs text-slate-300">Save final score, goals, assists, and quarter counts to your Season History & Stats.</p>
         </div>
         <div class="flex gap-2 w-full sm:w-auto">
           <button onclick="clearAllLocks()"
@@ -537,24 +560,25 @@
         </div>
       </section>
 
-      <!-- Player Season Leaderboard -->
+      <!-- Player Season Leaderboard (Sortable Columns) -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
         <div class="flex items-center justify-between mb-3">
           <div>
             <h2 class="font-bold text-sm text-white">🌟 Season Player Leaderboard</h2>
-            <p class="text-xs text-slate-400">Cumulative Goals, Assists, Points, and Shift History across saved games</p>
+            <p class="text-xs text-slate-400">Tap any column header to sort • Bench & Positions measured in Quarters (1.0 = Full Qtr, 0.5 = Shift)</p>
           </div>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse text-xs">
             <thead>
               <tr class="border-b border-slate-800 text-slate-400">
-                <th class="py-2 pr-2 font-semibold">Player</th>
-                <th class="py-2 px-2 text-center font-semibold">GP</th>
-                <th class="py-2 px-2 text-center font-semibold text-emerald-400">⚽ G</th>
-                <th class="py-2 px-2 text-center font-semibold text-blue-400">👟 A</th>
-                <th class="py-2 px-2 text-center font-semibold text-amber-300">PTS</th>
-                <th class="py-2 px-2 text-center font-semibold text-slate-300">🪑 Bench</th>
+                <th onclick="toggleStatsSort('number')" class="sortable py-2 pr-1 font-semibold w-10"># <span id="stSort_number"></span></th>
+                <th onclick="toggleStatsSort('name')" class="sortable py-2 pr-2 font-semibold">Player <span id="stSort_name"></span></th>
+                <th onclick="toggleStatsSort('gamesPlayed')" class="sortable py-2 px-2 text-center font-semibold">GP <span id="stSort_gamesPlayed"></span></th>
+                <th onclick="toggleStatsSort('goals')" class="sortable py-2 px-2 text-center font-semibold text-emerald-400">⚽ G <span id="stSort_goals"></span></th>
+                <th onclick="toggleStatsSort('assists')" class="sortable py-2 px-2 text-center font-semibold text-blue-400">👟 A <span id="stSort_assists"></span></th>
+                <th onclick="toggleStatsSort('pts')" class="sortable py-2 px-2 text-center font-semibold text-amber-300">PTS <span id="stSort_pts"></span></th>
+                <th onclick="toggleStatsSort('BENCH')" class="sortable py-2 px-2 text-center font-semibold text-slate-300">🪑 Bench <span id="stSort_BENCH"></span></th>
                 <th class="py-2 pl-2 text-right font-semibold text-slate-300">FWD / MID / DEF / GK</th>
               </tr>
             </thead>
@@ -563,12 +587,12 @@
         </div>
       </section>
 
-      <!-- Past Game History Viewer -->
+      <!-- Past Game History Viewer (Clickable to View & Edit) -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
         <div class="flex items-center justify-between">
           <div>
             <h2 class="font-bold text-sm text-white">📜 Completed Game History</h2>
-            <p class="text-xs text-slate-400">Match results, goal scorers, and assists log</p>
+            <p class="text-xs text-slate-400">Tap any match card to view full details or edit scores, goals, assists & player shifts</p>
           </div>
         </div>
         <div id="gameHistoryList" class="space-y-2.5"></div>
@@ -602,7 +626,6 @@
         </div>
       </div>
 
-      <!-- Collapsible Embedded Google Form -->
       <div id="feedbackEmbedContainer" class="hidden pt-3 border-t border-slate-800">
         <div class="bg-white rounded-xl overflow-hidden shadow-inner">
           <iframe
@@ -621,6 +644,106 @@
     </section>
 
   </main>
+
+  <!-- ===================================================================== -->
+  <!-- PAST GAME DETAILS & FULL EDITOR MODAL                                 -->
+  <!-- ===================================================================== -->
+  <div id="gameDetailModal" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="font-extrabold text-base text-white">📋 Match Details & Editor</h3>
+          <p class="text-xs text-slate-400">Edit score, goals, assists, or player quarter counts. Saving updates season stats automatically.</p>
+        </div>
+        <button onclick="closeGameDetailModal()" class="text-slate-400 hover:text-white text-sm px-2 py-1">✕</button>
+      </div>
+
+      <!-- Match Header Info Inputs -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Match Date</label>
+          <input id="histEditDate" type="text"
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Our Team Name</label>
+          <input id="histEditTeamName" type="text"
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Opponent Name</label>
+          <input id="histEditOpponent" type="text"
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-emerald-500" />
+        </div>
+      </div>
+
+      <!-- Score Adjusters -->
+      <div class="grid grid-cols-2 gap-3 bg-slate-950/90 border border-slate-800 rounded-2xl p-3">
+        <div class="text-center space-y-1">
+          <div class="text-xs font-bold text-emerald-400">Our Score</div>
+          <div class="flex items-center justify-center gap-2">
+            <button onclick="adjustHistDraftScore('our', -1)" class="w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">-</button>
+            <input id="histEditOurScore" type="number" min="0"
+              class="w-14 bg-slate-900 border border-slate-700 rounded-lg py-1 text-center mono font-extrabold text-lg text-white" />
+            <button onclick="adjustHistDraftScore('our', 1)" class="w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">+</button>
+          </div>
+        </div>
+        <div class="text-center space-y-1">
+          <div class="text-xs font-bold text-slate-400">Opponent Score</div>
+          <div class="flex items-center justify-center gap-2">
+            <button onclick="adjustHistDraftScore('opp', -1)" class="w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">-</button>
+            <input id="histEditOppScore" type="number" min="0"
+              class="w-14 bg-slate-900 border border-slate-700 rounded-lg py-1 text-center mono font-extrabold text-lg text-white" />
+            <button onclick="adjustHistDraftScore('opp', 1)" class="w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Editable Goals & Assists List -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-bold uppercase tracking-wider text-emerald-400">⚽ Goals & Assists Log</label>
+          <button onclick="addHistDraftGoal()"
+            class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
+            + Add Goal
+          </button>
+        </div>
+        <div id="histEditGoalsList" class="space-y-2 max-h-52 overflow-y-auto pr-1"></div>
+      </div>
+
+      <!-- Editable Player Participation & Quarter Shifts for This Game -->
+      <div id="histEditPlayersSection" class="space-y-2 pt-2 border-t border-slate-800">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-bold uppercase tracking-wider text-sky-400">🏃 Player Quarters in This Match</label>
+          <span class="text-[11px] text-slate-400">1.0 = Full Qtr • 0.5 = Shift</span>
+        </div>
+        <div id="histEditPlayersList" class="space-y-1.5 max-h-56 overflow-y-auto pr-1"></div>
+      </div>
+
+      <!-- Rotation Snapshot Viewer (If saved with game) -->
+      <div id="histRotationSnapshotSection" class="hidden space-y-1.5 pt-2 border-t border-slate-800">
+        <label class="text-xs font-bold uppercase tracking-wider text-slate-400">🔄 Saved Rotation Snapshot</label>
+        <div id="histRotationSnapshotList" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]"></div>
+      </div>
+
+      <div class="flex items-center justify-between gap-2 pt-3 border-t border-slate-800">
+        <button onclick="deleteCurrentModalHistoryGame()"
+          class="px-3 py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-xs font-semibold border border-rose-500/30">
+          🗑️ Delete Game
+        </button>
+        <div class="flex gap-2">
+          <button onclick="closeGameDetailModal()"
+            class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
+            Cancel
+          </button>
+          <button onclick="saveGameDetailEdits()"
+            class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow-lg">
+            💾 Save Game Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ===================================================================== -->
   <!-- LOG TEAM GOAL MODAL (Scorer & Assist Selector)                        -->
@@ -699,7 +822,7 @@
 
   <script>
     // =========================================================================
-    // MULTI-TEAM STORAGE & STATE ARCHITECTURE
+    // MULTI-TEAM STORAGE & STATE ARCHITECTURE (100% BACKWARDS COMPATIBLE)
     // =========================================================================
     const MULTI_TEAM_STORAGE_KEY = 'soccer_sub_pos_stats_v4_multiteam';
     const LEGACY_STORAGE_KEY = 'soccer_sub_pos_stats_v3';
@@ -719,6 +842,7 @@
     function createBlankTeam(name = 'My Team') {
       return {
         id: 'team_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        v5QuarterScale: true, // Marks 1.0 = Full Qtr, 0.5 = Half-Qtr Shift
         activeTab: 'game',
         teamName: name,
         trackPositions: true,
@@ -727,6 +851,9 @@
         slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 },
         quarterMins: 8,
         shiftsPerQuarter: 2,
+        rosterSort: 'order', // 'order' | 'name' | 'number'
+        balanceSort: { col: 'order', dir: 'asc' },
+        statsSort: { col: 'pts', dir: 'desc' },
         players: [],
         lockedShifts: {},
         fullQuarterLocks: { 1: false, 2: false, 3: false, 4: false },
@@ -746,7 +873,6 @@
       teams: []
     };
 
-    // Active team pointer (references the active object inside appStore.teams)
     let state = createBlankTeam();
 
     let timer = {
@@ -760,6 +886,72 @@
     let editingShiftIdx = null;
     let modalDraft = { benchIds: [], positions: {} };
     let goalDraft = { scorerId: null, assistId: null };
+
+    // Historical Game Editor Temp State
+    let editingHistoryGameId = null;
+    let histDraft = null;
+
+    // PWA Install Prompt Reference
+    let deferredInstallPrompt = null;
+
+    // =========================================================================
+    // PWA SERVICE WORKER & ANDROID WEBAPK INSTALL SUPPORT
+    // =========================================================================
+    function initPwaSupport() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      }
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        const btn = document.getElementById('pwaInstallBtn');
+        if (btn) {
+          btn.classList.remove('hidden');
+          btn.classList.add('flex');
+        }
+      });
+      window.addEventListener('appinstalled', () => {
+        deferredInstallPrompt = null;
+        const btn = document.getElementById('pwaInstallBtn');
+        if (btn) btn.classList.add('hidden');
+      });
+    }
+
+    async function triggerPwaInstall() {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        document.getElementById('pwaInstallBtn').classList.add('hidden');
+      } else {
+        alert('To install as a full-screen app: open your browser menu (⋮ or Share ↑) and tap "Install app" or "Add to Home Screen".');
+      }
+    }
+
+    // =========================================================================
+    // NUMBER FORMATTING & SORT HELPERS
+    // =========================================================================
+    function fmtNum(val) {
+      const n = Math.round((Number(val) || 0) * 100) / 100;
+      return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
+    }
+
+    function comparePlayerNumbers(a, b) {
+      const numA = parseInt(a.number, 10);
+      const numB = parseInt(b.number, 10);
+      const validA = !isNaN(numA);
+      const validB = !isNaN(numB);
+      if (validA && validB) {
+        if (numA !== numB) return numA - numB;
+      } else if (validA !== validB) {
+        return validA ? -1 : 1;
+      }
+      return (a.name || '').localeCompare(b.name || '');
+    }
+
+    function getShiftQuarterWeight(shiftsPerQuarter = state.shiftsPerQuarter) {
+      return shiftsPerQuarter === 1 ? 1.0 : 0.5;
+    }
 
     // =========================================================================
     // FEEDBACK FORM EMBED TOGGLE
@@ -783,16 +975,44 @@
     }
 
     // =========================================================================
-    // MULTI-TEAM MANAGEMENT & URL SNAPSHOT SHARING
+    // MULTI-TEAM MANAGEMENT & BACKWARDS-COMPATIBLE MIGRATION
     // =========================================================================
     function normalizeTeamObject(rawTeam) {
       const base = createBlankTeam(rawTeam.teamName || 'My Team');
       const merged = { ...base, ...rawTeam };
-      merged.players = (merged.players || []).map(p => ({
-        ...p,
-        number: p.number || '',
-        prior: { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0, ...(p.prior || {}) }
-      }));
+
+      merged.rosterSort = rawTeam.rosterSort || 'order';
+      merged.balanceSort = rawTeam.balanceSort || { col: 'order', dir: 'asc' };
+      merged.statsSort = rawTeam.statsSort || { col: 'pts', dir: 'desc' };
+
+      const needsV5ScaleMigration = !rawTeam.v5QuarterScale && (rawTeam.shiftsPerQuarter || 2) === 2;
+
+      merged.players = (merged.players || []).map(p => {
+        const prior = {
+          BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0,
+          gamesPlayed: 0, goals: 0, assists: 0,
+          ...(p.prior || {})
+        };
+
+        // If migrating from v3/v4 where 2 shifts/qtr added 1.0 per half-quarter shift (8 per game),
+        // convert existing shift counts to quarter units (0.5 per half-quarter shift = 4.0 per game).
+        if (needsV5ScaleMigration) {
+          const totalShiftSum = (prior.BENCH || 0) + (prior.FWD || 0) + (prior.MID || 0) + (prior.DEF || 0) + (prior.GK || 0);
+          if (totalShiftSum > 0) {
+            ['BENCH', 'FWD', 'MID', 'DEF', 'GK'].forEach(z => {
+              prior[z] = Math.round((prior[z] || 0) * 0.5 * 10) / 10;
+            });
+          }
+        }
+
+        return {
+          ...p,
+          number: p.number || '',
+          prior
+        };
+      });
+
+      merged.v5QuarterScale = true;
       merged.currentMatch = {
         opponent: 'Opponent',
         ourScore: 0,
@@ -800,7 +1020,19 @@
         goals: [],
         ...(rawTeam.currentMatch || {})
       };
-      merged.gameHistory = rawTeam.gameHistory || [];
+      merged.gameHistory = (rawTeam.gameHistory || []).map(g => ({
+        ...g,
+        goals: (g.goals || []).map((gl, i) => ({
+          id: gl.id || ('hg_' + i + '_' + Date.now()),
+          quarter: gl.quarter || 1,
+          clock: gl.clock || '04:00',
+          scorerId: gl.scorerId || null,
+          assistId: gl.assistId || null,
+          scorerLabel: gl.scorerLabel || 'Goal',
+          assistLabel: gl.assistLabel || null
+        }))
+      }));
+
       return merged;
     }
 
@@ -872,6 +1104,7 @@
     function getSerializablePayload() {
       return {
         id: state.id,
+        v5QuarterScale: true,
         teamName: state.teamName,
         trackPositions: state.trackPositions,
         smsStyle: state.smsStyle,
@@ -879,6 +1112,7 @@
         slots: state.slots,
         quarterMins: state.quarterMins,
         shiftsPerQuarter: state.shiftsPerQuarter,
+        rosterSort: state.rosterSort,
         players: state.players,
         lockedShifts: state.lockedShifts,
         fullQuarterLocks: state.fullQuarterLocks,
@@ -934,9 +1168,9 @@
     }
 
     function loadState() {
+      initPwaSupport();
       let loadedFromHash = false;
 
-      // 1. Load Multi-Team Storage (or migrate from v3 single-team storage)
       try {
         const rawMulti = localStorage.getItem(MULTI_TEAM_STORAGE_KEY);
         if (rawMulti) {
@@ -946,7 +1180,6 @@
             appStore.activeTeamId = parsedMulti.activeTeamId || appStore.teams[0].id;
           }
         } else {
-          // Check legacy v3 storage and migrate automatically
           const rawLegacy = localStorage.getItem(LEGACY_STORAGE_KEY);
           if (rawLegacy) {
             const legacyTeam = normalizeTeamObject(JSON.parse(rawLegacy));
@@ -960,7 +1193,6 @@
 
       syncActiveTeamPointer();
 
-      // 2. Check if URL contains a shared team snapshot (#s=...)
       if (window.location.hash && window.location.hash.startsWith('#s=')) {
         try {
           const encoded = window.location.hash.slice(3);
@@ -971,7 +1203,6 @@
               t => t.id === incomingTeam.id || t.teamName.toLowerCase() === incomingTeam.teamName.toLowerCase()
             );
 
-            // If current active team is completely empty, replace it directly
             if (appStore.teams.length === 1 && appStore.teams[0].players.length === 0) {
               appStore.teams[0] = incomingTeam;
               appStore.activeTeamId = incomingTeam.id;
@@ -991,7 +1222,6 @@
               }
               loadedFromHash = true;
             } else {
-              // Add as a brand new team without overwriting other teams!
               appStore.teams.push(incomingTeam);
               appStore.activeTeamId = incomingTeam.id;
               loadedFromHash = true;
@@ -1036,7 +1266,7 @@
     }
 
     // =========================================================================
-    // FAIR BENCH + POSITION ROTATION ENGINE
+    // FAIR BENCH + POSITION ROTATION ENGINE (QUARTER WEIGHT: 1.0 or 0.5)
     // =========================================================================
     function getTotalFieldSlots() {
       return (state.slots.FWD || 0) + (state.slots.MID || 0) + (state.slots.DEF || 0) + (state.slots.GK || 0);
@@ -1052,6 +1282,7 @@
       const fieldSize = getTotalFieldSlots();
       const numSitting = Math.max(0, numPresent - fieldSize);
       const totalShifts = getTotalShiftsCount();
+      const shiftWeight = getShiftQuarterWeight(state.shiftsPerQuarter);
 
       const runningCounts = {};
       presentPlayers.forEach(p => {
@@ -1098,8 +1329,8 @@
 
           candidates.sort((a, b) => {
             if (a.satPrev !== b.satPrev) return a.satPrev ? 1 : -1;
-            if (a.totalBench !== b.totalBench) return a.totalBench - b.totalBench;
-            if (a.gameBench !== b.gameBench) return a.gameBench - b.gameBench;
+            if (Math.abs(a.totalBench - b.totalBench) > 0.01) return a.totalBench - b.totalBench;
+            if (Math.abs(a.gameBench - b.gameBench) > 0.01) return a.gameBench - b.gameBench;
             return a.idx - b.idx;
           });
 
@@ -1114,10 +1345,10 @@
 
         presentPlayers.forEach(p => {
           if (benchIds.includes(p.id)) {
-            runningCounts[p.id].BENCH++;
+            runningCounts[p.id].BENCH = Math.round((runningCounts[p.id].BENCH + shiftWeight) * 100) / 100;
           } else {
             const assignedPos = posMap[p.id] || 'MID';
-            runningCounts[p.id][assignedPos] = (runningCounts[p.id][assignedPos] || 0) + 1;
+            runningCounts[p.id][assignedPos] = Math.round(((runningCounts[p.id][assignedPos] || 0) + shiftWeight) * 100) / 100;
           }
         });
 
@@ -1178,7 +1409,7 @@
           const totalInZone = (p.prior[zone] || 0) + (runningCounts[p.id][zone] || 0);
           const gameInZone = runningCounts[p.id][zone] || 0;
           const prevPos = prevShift && prevShift.positions ? prevShift.positions[p.id] : null;
-          const repeatPenalty = prevPos === zone ? 2.5 : 0;
+          const repeatPenalty = prevPos === zone ? 1.25 : 0;
 
           const score = (totalInZone * 10) + (gameInZone * 4) + (repeatPenalty * 10) + (idx * 0.01);
           if (score < bestScore) {
@@ -1197,17 +1428,34 @@
     }
 
     // =========================================================================
+    // ACTIVE SHIFT RESOLUTION FOR TIMER & SCHEDULE HIGHLIGHTING
+    // =========================================================================
+    function isCurrentQuarterFullSub() {
+      return state.shiftsPerQuarter === 1 || !!state.fullQuarterLocks[timer.quarter];
+    }
+
+    function getActiveShiftObject() {
+      const q = timer.quarter;
+      if (state.shiftsPerQuarter === 1) {
+        return state.computedShifts.find(s => s.quarter === q && s.part === 1) || state.computedShifts[0];
+      }
+      const midSec = Math.floor((state.quarterMins * 60) / 2);
+      const activePart = (state.fullQuarterLocks[q] || timer.secondsLeft > midSec) ? 1 : 2;
+      return state.computedShifts.find(s => s.quarter === q && s.part === activePart) || state.computedShifts[0];
+    }
+
+    // =========================================================================
     // UI RENDERING
     // =========================================================================
     function renderAll() {
       renderTabsAndOnboarding();
       renderHeaderAndSettings();
       renderScoreboard();
+      renderTimerUI();
       renderAttendance();
       renderScheduleGrid();
       renderBalanceTable();
       renderSmsBubbles();
-      renderTimerUI();
       renderStatsAndHistoryTab();
     }
 
@@ -1242,7 +1490,6 @@
     }
 
     function renderHeaderAndSettings() {
-      // Populate multi-team selector dropdown in header
       const selectEl = document.getElementById('headerTeamSelect');
       selectEl.innerHTML = [
         ...appStore.teams.map(t =>
@@ -1299,9 +1546,9 @@
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
             <span class="text-[11px] text-slate-400">Prior Bench:</span>
-            <button onclick="adjustPrior('${p.id}', 'BENCH', -1)" class="w-5 h-5 rounded bg-slate-800 font-bold">-</button>
-            <span class="mono font-bold text-amber-300 w-4 text-center">${p.prior.BENCH || 0}</span>
-            <button onclick="adjustPrior('${p.id}', 'BENCH', 1)" class="w-5 h-5 rounded bg-slate-800 font-bold">+</button>
+            <button onclick="adjustPrior('${p.id}', 'BENCH', -0.5)" class="w-5 h-5 rounded bg-slate-800 font-bold">-</button>
+            <span class="mono font-bold text-amber-300 w-7 text-center">${fmtNum(p.prior.BENCH || 0)}</span>
+            <button onclick="adjustPrior('${p.id}', 'BENCH', 0.5)" class="w-5 h-5 rounded bg-slate-800 font-bold">+</button>
             <button onclick="removePlayer('${p.id}')" class="ml-1 text-slate-500 hover:text-rose-400" title="Remove">🗑️</button>
           </div>
         </div>
@@ -1466,8 +1713,24 @@
     }
 
     // =========================================================================
-    // ATTENDANCE, SCHEDULE & BALANCE TABLE RENDERING
+    // ATTENDANCE, SCHEDULE & BALANCE TABLE RENDERING (WITH SORTING)
     // =========================================================================
+    function setRosterSort(mode) {
+      state.rosterSort = mode;
+      saveState();
+      renderAttendance();
+    }
+
+    function getSortedRosterList(playersArray) {
+      const copy = [...playersArray];
+      if (state.rosterSort === 'name') {
+        copy.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      } else if (state.rosterSort === 'number') {
+        copy.sort(comparePlayerNumbers);
+      }
+      return copy;
+    }
+
     function renderAttendance() {
       const presentCount = state.players.filter(p => p.present).length;
       const fieldSlots = getTotalFieldSlots();
@@ -1476,13 +1739,25 @@
       document.getElementById('attendanceSubtext').textContent =
         `${presentCount} present • ${fieldSlots} on field • ${sittingCount} sitting per shift`;
 
+      ['Order', 'Name', 'Number'].forEach(label => {
+        const key = label.toLowerCase();
+        const btn = document.getElementById('sortBtn' + label);
+        if (btn) {
+          btn.className = state.rosterSort === key
+            ? 'px-2 py-1 rounded-md font-bold bg-emerald-500 text-slate-950'
+            : 'px-2 py-1 rounded-md font-semibold text-slate-400 hover:text-white';
+        }
+      });
+
       const container = document.getElementById('attendanceChips');
       if (state.players.length === 0) {
         container.innerHTML = `<span class="text-xs text-slate-500 italic">Add players above to begin roll call.</span>`;
         return;
       }
 
-      container.innerHTML = state.players.map(p => {
+      const sortedPlayers = getSortedRosterList(state.players);
+
+      container.innerHTML = sortedPlayers.map(p => {
         const badge = formatPlayerBadge(p);
         if (p.present) {
           return `
@@ -1508,37 +1783,60 @@
       const grid = document.getElementById('scheduleGrid');
       const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
       const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
+      const activeShift = getActiveShiftObject();
 
       let html = '';
       for (let q = 1; q <= 4; q++) {
         const qShifts = state.computedShifts.filter(s => s.quarter === q);
-        const isFullQtr = state.fullQuarterLocks[q];
+        const isFullQtr = state.shiftsPerQuarter === 1 || !!state.fullQuarterLocks[q];
+        const isActiveQuarter = timer.quarter === q;
+
+        // If full quarter is toggled on for this quarter in 2-shift mode, display a single unified full-quarter card
+        const visibleShifts = (state.shiftsPerQuarter === 2 && state.fullQuarterLocks[q] && qShifts.length > 0)
+          ? [qShifts[0]]
+          : qShifts;
 
         html += `
-          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 shadow-lg">
+          <div class="rounded-2xl p-3.5 space-y-2.5 shadow-lg border transition ${
+            isActiveQuarter
+              ? 'bg-slate-900 border-emerald-500 ring-2 ring-emerald-500/30'
+              : 'bg-slate-900 border-slate-800'
+          }">
             <div class="flex items-center justify-between border-b border-slate-800 pb-2">
               <div class="flex items-center gap-2">
-                <span class="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-extrabold text-xs">Quarter ${q}</span>
-                <span class="text-[11px] text-slate-400">${state.quarterMins} mins</span>
+                <button onclick="setTimerQuarter(${q})"
+                  class="px-2 py-0.5 rounded-md font-extrabold text-xs transition ${
+                    isActiveQuarter
+                      ? 'bg-emerald-500 text-slate-950 shadow'
+                      : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
+                  }">
+                  Quarter ${q}
+                </button>
+                <span class="text-[11px] text-slate-400">${state.quarterMins}m</span>
+                ${isActiveQuarter ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/40">🟢 ACTIVE</span>` : ''}
               </div>
               ${state.shiftsPerQuarter === 2 ? `
                 <button onclick="toggleFullQuarter(${q})"
                   class="px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${
-                    isFullQtr
+                    state.fullQuarterLocks[q]
                       ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                       : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
                   }">
-                  ${isFullQtr ? '🔒 Full Qtr' : 'Full Qtr (No Mid-Sub)'}
+                  ${state.fullQuarterLocks[q] ? '🔒 Full Qtr (1.0)' : 'Full Qtr (No Mid-Sub)'}
                 </button>
-              ` : ''}
+              ` : `<span class="text-[11px] text-slate-500 font-semibold">Full Qtr (1.0)</span>`}
             </div>
 
             <div class="space-y-2">
-              ${qShifts.map(shift => {
+              ${visibleShifts.map(shift => {
                 const benchNames = shift.benchIds.map(id => playerMap[id] || '').filter(Boolean);
-                const shiftLabel = state.shiftsPerQuarter === 2
-                  ? (shift.part === 1 ? `1st ${shiftMins}m` : `2nd ${shiftMins}m`)
-                  : `Full ${state.quarterMins}m`;
+                const shiftLabel = isFullQtr
+                  ? `Full Quarter (${state.quarterMins}m • 1.0 Qtr)`
+                  : (shift.part === 1 ? `1st ${shiftMins}m (0.5 Qtr)` : `2nd ${shiftMins}m (0.5 Qtr)`);
+
+                const isShiftActive = isActiveQuarter && (
+                  isFullQtr || (activeShift && activeShift.index === shift.index)
+                );
 
                 const posGroups = { FWD: [], MID: [], DEF: [], GK: [] };
                 Object.entries(shift.positions || {}).forEach(([pid, pos]) => {
@@ -1551,14 +1849,17 @@
                 return `
                   <div onclick="openEditModal(${shift.index})"
                     class="group cursor-pointer rounded-xl p-2.5 border transition ${
-                      shift.locked
-                        ? 'bg-amber-500/10 border-amber-500/40'
-                        : 'bg-slate-950/60 border-slate-800/90 hover:border-slate-700'
+                      isShiftActive
+                        ? 'bg-emerald-950/35 border-emerald-400 ring-1 ring-emerald-400/50 shadow-md'
+                        : shift.locked
+                          ? 'bg-amber-500/10 border-amber-500/40'
+                          : 'bg-slate-950/60 border-slate-800/90 hover:border-slate-700'
                     }">
                     <div class="flex items-center justify-between mb-1.5">
-                      <div class="flex items-center gap-1.5">
-                        <span class="text-xs font-bold text-slate-300">${shiftLabel}</span>
-                        ${shift.locked ? `<span class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">LOCKED</span>` : ''}
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <span class="text-xs font-bold ${isShiftActive ? 'text-emerald-300' : 'text-slate-300'}">${shiftLabel}</span>
+                        ${isShiftActive ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-extrabold">▶ IN PLAY</span>` : ''}
+                        ${shift.locked ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">LOCKED</span>` : ''}
                       </div>
                       <span class="text-[11px] text-emerald-400 group-hover:underline font-medium">✏️ Edit Actual</span>
                     </div>
@@ -1609,10 +1910,23 @@
       grid.innerHTML = html;
     }
 
+    function toggleBalanceSort(col) {
+      if (!state.balanceSort) state.balanceSort = { col: 'order', dir: 'asc' };
+      if (state.balanceSort.col === col) {
+        state.balanceSort.dir = state.balanceSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.balanceSort.col = col;
+        state.balanceSort.dir = (col === 'name' || col === 'number') ? 'asc' : 'desc';
+      }
+      saveState();
+      renderBalanceTable();
+    }
+
     function renderBalanceTable() {
       const tbody = document.getElementById('balanceTableBody');
-      const totalShifts = getTotalShiftsCount();
       const showGkCol = (state.slots.GK || 0) > 0;
+      const shiftWeight = getShiftQuarterWeight(state.shiftsPerQuarter);
+      const totalGameQuarters = 4.0;
 
       document.getElementById('gkHeaderCell').style.display = (state.trackPositions && showGkCol) ? '' : 'none';
       document.querySelectorAll('.pos-col').forEach(el => {
@@ -1621,37 +1935,67 @@
         }
       });
 
+      const sortCol = (state.balanceSort && state.balanceSort.col) || 'order';
+      const sortDir = (state.balanceSort && state.balanceSort.dir) || 'asc';
+      ['number', 'name', 'BENCH', 'FWD', 'MID', 'DEF', 'GK', 'playPct'].forEach(c => {
+        const ind = document.getElementById('balSort_' + c);
+        if (ind) ind.textContent = sortCol === c ? (sortDir === 'asc' ? '▲' : '▼') : '';
+      });
+
       const presentPlayers = state.players.filter(p => p.present);
       if (presentPlayers.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="py-3 text-center text-slate-500 italic">No active players yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="py-3 text-center text-slate-500 italic">No active players yet.</td></tr>`;
         return;
       }
 
-      tbody.innerHTML = presentPlayers.map(p => {
+      const rows = presentPlayers.map((p, idx) => {
         const counts = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0 };
         state.computedShifts.forEach(s => {
           if (s.benchIds.includes(p.id)) {
-            counts.BENCH++;
+            counts.BENCH = Math.round((counts.BENCH + shiftWeight) * 100) / 100;
           } else {
             const pos = s.positions[p.id] || 'MID';
-            counts[pos] = (counts[pos] || 0) + 1;
+            counts[pos] = Math.round(((counts[pos] || 0) + shiftWeight) * 100) / 100;
           }
         });
 
-        const playedShifts = totalShifts - counts.BENCH;
-        const playPct = totalShifts > 0 ? Math.round((playedShifts / totalShifts) * 100) : 100;
+        const playedQuarters = Math.max(0, totalGameQuarters - counts.BENCH);
+        const playPct = Math.round((playedQuarters / totalGameQuarters) * 100);
 
+        return { player: p, idx, counts, playPct };
+      });
+
+      rows.sort((a, b) => {
+        let cmp = 0;
+        if (sortCol === 'name') {
+          cmp = (a.player.name || '').localeCompare(b.player.name || '');
+        } else if (sortCol === 'number') {
+          cmp = comparePlayerNumbers(a.player, b.player);
+        } else if (sortCol === 'playPct') {
+          cmp = a.playPct - b.playPct;
+        } else if (['BENCH', 'FWD', 'MID', 'DEF', 'GK'].includes(sortCol)) {
+          const totA = (a.counts[sortCol] || 0) + (a.player.prior[sortCol] || 0);
+          const totB = (b.counts[sortCol] || 0) + (b.player.prior[sortCol] || 0);
+          cmp = totA !== totB ? totA - totB : (a.counts[sortCol] || 0) - (b.counts[sortCol] || 0);
+        } else {
+          cmp = a.idx - b.idx;
+        }
+        return sortDir === 'asc' ? cmp : -cmp;
+      });
+
+      tbody.innerHTML = rows.map(({ player: p, counts, playPct }) => {
         const fmtCell = (zone) => {
           const today = counts[zone] || 0;
-          const season = today + (p.prior[zone] || 0);
+          const season = Math.round((today + (p.prior[zone] || 0)) * 100) / 100;
           return p.prior[zone]
-            ? `<span class="font-bold text-white">${today}</span> <span class="text-slate-500">(${season})</span>`
-            : `<span class="font-bold text-white">${today}</span>`;
+            ? `<span class="font-bold text-white">${fmtNum(today)}</span> <span class="text-slate-500">(${fmtNum(season)})</span>`
+            : `<span class="font-bold text-white">${fmtNum(today)}</span>`;
         };
 
         return `
           <tr>
-            <td class="py-2 pr-2 font-bold text-white">${escapeHtml(formatPlayerBadge(p))}</td>
+            <td class="py-2 pr-1 mono text-emerald-300 font-bold">${p.number ? '#' + escapeHtml(p.number) : '-'}</td>
+            <td class="py-2 pr-2 font-bold text-white">${escapeHtml(p.name)}</td>
             <td class="py-2 px-2 text-center mono">${fmtCell('BENCH')}</td>
             ${state.trackPositions ? `
               <td class="py-2 px-2 text-center mono text-rose-300">${fmtCell('FWD')}</td>
@@ -1666,13 +2010,25 @@
     }
 
     // =========================================================================
-    // SEASON STATS & GAME HISTORY VIEWER
+    // SEASON STATS & CLICKABLE / EDITABLE GAME HISTORY VIEWER
     // =========================================================================
+    function toggleStatsSort(col) {
+      if (!state.statsSort) state.statsSort = { col: 'pts', dir: 'desc' };
+      if (state.statsSort.col === col) {
+        state.statsSort.dir = state.statsSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.statsSort.col = col;
+        state.statsSort.dir = (col === 'name' || col === 'number') ? 'asc' : 'desc';
+      }
+      saveState();
+      renderStatsAndHistoryTab();
+    }
+
     function renderStatsAndHistoryTab() {
       let wins = 0, losses = 0, draws = 0, gf = 0, ga = 0;
       state.gameHistory.forEach(g => {
-        gf += g.ourScore;
-        ga += g.oppScore;
+        gf += Number(g.ourScore) || 0;
+        ga += Number(g.oppScore) || 0;
         if (g.ourScore > g.oppScore) wins++;
         else if (g.ourScore < g.oppScore) losses++;
         else draws++;
@@ -1684,15 +2040,32 @@
       document.getElementById('statGoalsAgainst').textContent = ga;
       document.getElementById('statGoalDiff').textContent = diff > 0 ? `+${diff}` : String(diff);
 
+      const sortCol = (state.statsSort && state.statsSort.col) || 'pts';
+      const sortDir = (state.statsSort && state.statsSort.dir) || 'desc';
+      ['number', 'name', 'gamesPlayed', 'goals', 'assists', 'pts', 'BENCH'].forEach(c => {
+        const el = document.getElementById('stSort_' + c);
+        if (el) el.textContent = sortCol === c ? (sortDir === 'asc' ? '▲' : '▼') : '';
+      });
+
       const statsBody = document.getElementById('seasonStatsTableBody');
       if (state.players.length === 0) {
-        statsBody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-slate-500 italic">Add players to your roster to track season stats.</td></tr>`;
+        statsBody.innerHTML = `<tr><td colspan="8" class="py-4 text-center text-slate-500 italic">Add players to your roster to track season stats.</td></tr>`;
       } else {
         const sortedPlayers = [...state.players].sort((a, b) => {
-          const ptsA = ((a.prior.goals || 0) * 2) + (a.prior.assists || 0);
-          const ptsB = ((b.prior.goals || 0) * 2) + (b.prior.assists || 0);
-          if (ptsB !== ptsA) return ptsB - ptsA;
-          return (b.prior.goals || 0) - (a.prior.goals || 0);
+          let cmp = 0;
+          const ptsA = (a.prior.goals || 0) + (a.prior.assists || 0);
+          const ptsB = (b.prior.goals || 0) + (b.prior.assists || 0);
+
+          if (sortCol === 'name') cmp = (a.name || '').localeCompare(b.name || '');
+          else if (sortCol === 'number') cmp = comparePlayerNumbers(a, b);
+          else if (sortCol === 'gamesPlayed') cmp = (a.prior.gamesPlayed || 0) - (b.prior.gamesPlayed || 0);
+          else if (sortCol === 'goals') cmp = (a.prior.goals || 0) - (b.prior.goals || 0);
+          else if (sortCol === 'assists') cmp = (a.prior.assists || 0) - (b.prior.assists || 0);
+          else if (sortCol === 'BENCH') cmp = (a.prior.BENCH || 0) - (b.prior.BENCH || 0);
+          else {
+            cmp = ptsA !== ptsB ? ptsA - ptsB : (a.prior.goals || 0) - (b.prior.goals || 0);
+          }
+          return sortDir === 'asc' ? cmp : -cmp;
         });
 
         statsBody.innerHTML = sortedPlayers.map(p => {
@@ -1700,12 +2073,13 @@
           const a = p.prior.assists || 0;
           const pts = g + a;
           const gp = p.prior.gamesPlayed || 0;
-          const bench = p.prior.BENCH || 0;
-          const posBreakdown = `${p.prior.FWD || 0} / ${p.prior.MID || 0} / ${p.prior.DEF || 0} / ${p.prior.GK || 0}`;
+          const bench = fmtNum(p.prior.BENCH || 0);
+          const posBreakdown = `${fmtNum(p.prior.FWD || 0)} / ${fmtNum(p.prior.MID || 0)} / ${fmtNum(p.prior.DEF || 0)} / ${fmtNum(p.prior.GK || 0)}`;
 
           return `
             <tr>
-              <td class="py-2.5 pr-2 font-bold text-white">${escapeHtml(formatPlayerBadge(p))}</td>
+              <td class="py-2.5 pr-1 mono text-emerald-300 font-bold">${p.number ? '#' + escapeHtml(p.number) : '-'}</td>
+              <td class="py-2.5 pr-2 font-bold text-white">${escapeHtml(p.name)}</td>
               <td class="py-2.5 px-2 text-center mono text-slate-300">${gp}</td>
               <td class="py-2.5 px-2 text-center mono font-bold text-emerald-400">${g}</td>
               <td class="py-2.5 px-2 text-center mono font-bold text-blue-400">${a}</td>
@@ -1738,7 +2112,8 @@
         const resChar = isWin ? 'W' : isLoss ? 'L' : 'D';
 
         return `
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
+          <div onclick="openGameDetailModal('${game.id}')"
+            class="cursor-pointer group bg-slate-950/80 hover:bg-slate-950 border border-slate-800 hover:border-emerald-500/50 rounded-xl p-3.5 space-y-2 transition shadow">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <span class="px-2 py-0.5 rounded-md text-xs font-extrabold border ${badgeClass}">${resChar}</span>
@@ -1748,7 +2123,7 @@
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-[11px] text-slate-400">${escapeHtml(game.date)}</span>
-                <button onclick="deleteHistoryGame('${game.id}')" class="text-slate-500 hover:text-rose-400 text-xs" title="Delete Game">🗑️</button>
+                <span class="text-[11px] text-emerald-400 font-semibold group-hover:underline">✏️ View / Edit</span>
               </div>
             </div>
 
@@ -1761,7 +2136,7 @@
                   </span>
                 `).join('')}
               </div>
-            ` : `<div class="text-[11px] text-slate-500 italic">No team goals logged</div>`}
+            ` : `<div class="text-[11px] text-slate-500 italic">No team goals logged • Tap to view or edit match details</div>`}
           </div>
         `;
       }).join('');
@@ -1771,14 +2146,29 @@
       if (state.players.length === 0) return;
 
       const presentPlayers = state.players.filter(p => p.present);
+      const shiftWeight = getShiftQuarterWeight(state.shiftsPerQuarter);
+
+      // Snapshot per-player quarter stats for this game so it can be viewed/edited later
+      const gamePlayerStats = {};
+      state.players.forEach(p => {
+        gamePlayerStats[p.id] = {
+          playerId: p.id,
+          name: p.name,
+          number: p.number || '',
+          present: !!p.present,
+          BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0
+        };
+      });
 
       state.computedShifts.forEach(s => {
         presentPlayers.forEach(p => {
           if (s.benchIds.includes(p.id)) {
-            p.prior.BENCH = (p.prior.BENCH || 0) + 1;
+            p.prior.BENCH = Math.round(((p.prior.BENCH || 0) + shiftWeight) * 100) / 100;
+            gamePlayerStats[p.id].BENCH = Math.round((gamePlayerStats[p.id].BENCH + shiftWeight) * 100) / 100;
           } else {
             const pos = s.positions[p.id] || 'MID';
-            p.prior[pos] = (p.prior[pos] || 0) + 1;
+            p.prior[pos] = Math.round(((p.prior[pos] || 0) + shiftWeight) * 100) / 100;
+            gamePlayerStats[p.id][pos] = Math.round(((gamePlayerStats[p.id][pos] || 0) + shiftWeight) * 100) / 100;
           }
         });
       });
@@ -1795,12 +2185,27 @@
         if (assister) assister.prior.assists = (assister.prior.assists || 0) + 1;
 
         return {
+          id: g.id || ('hg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5)),
           quarter: g.quarter,
           clock: g.clock,
+          scorerId: g.scorerId,
+          assistId: g.assistId || null,
           scorerLabel: getPlayerDisplayById(g.scorerId),
           assistLabel: g.assistId ? getPlayerDisplayById(g.assistId) : null
         };
       });
+
+      const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
+      const rotationSnapshot = state.computedShifts.map(s => ({
+        quarter: s.quarter,
+        part: s.part,
+        benchNames: s.benchIds.map(id => playerMap[id]).filter(Boolean),
+        positions: Object.fromEntries(
+          Object.entries(s.positions || {})
+            .filter(([pid]) => !s.benchIds.includes(pid) && playerMap[pid])
+            .map(([pid, pos]) => [playerMap[pid], pos])
+        )
+      }));
 
       const todayStr = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       state.gameHistory.unshift({
@@ -1810,7 +2215,10 @@
         opponent: state.currentMatch.opponent || 'Opponent',
         ourScore: state.currentMatch.ourScore || 0,
         oppScore: state.currentMatch.oppScore || 0,
-        goals: formattedGoals
+        shiftsPerQuarter: state.shiftsPerQuarter,
+        goals: formattedGoals,
+        playerStats: gamePlayerStats,
+        rotationSnapshot
       });
 
       state.currentMatch = {
@@ -1827,10 +2235,348 @@
       renderAll();
     }
 
+    // =========================================================================
+    // HISTORICAL GAME DETAIL VIEWER & EDITOR MODAL LOGIC
+    // =========================================================================
+    function resolveGoalPlayerId(goalObj, fieldId, fieldLabel) {
+      if (goalObj[fieldId]) return goalObj[fieldId];
+      if (!goalObj[fieldLabel]) return fieldId === 'scorerId' ? 'OWN_GOAL' : null;
+      const lbl = String(goalObj[fieldLabel]).toLowerCase().trim();
+      if (lbl === 'own goal' || lbl === 'team goal') return 'OWN_GOAL';
+      const match = state.players.find(p =>
+        formatPlayerBadge(p).toLowerCase() === lbl || p.name.toLowerCase() === lbl
+      );
+      return match ? match.id : (fieldId === 'scorerId' ? 'OWN_GOAL' : null);
+    }
+
+    function openGameDetailModal(gameId) {
+      const game = state.gameHistory.find(g => g.id === gameId);
+      if (!game) return;
+      editingHistoryGameId = gameId;
+
+      // Build editable player stats even for legacy games that didn't store playerStats
+      const draftPlayerStats = {};
+      state.players.forEach(p => {
+        const existing = game.playerStats && game.playerStats[p.id];
+        draftPlayerStats[p.id] = existing
+          ? { ...existing }
+          : {
+              playerId: p.id,
+              name: p.name,
+              number: p.number || '',
+              present: true,
+              BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0,
+              isLegacyUnrecorded: true
+            };
+      });
+
+      histDraft = {
+        date: game.date || '',
+        teamName: game.teamName || state.teamName,
+        opponent: game.opponent || 'Opponent',
+        ourScore: Number(game.ourScore) || 0,
+        oppScore: Number(game.oppScore) || 0,
+        goals: (game.goals || []).map(gl => ({
+          id: gl.id || ('hg_' + Math.random().toString(36).slice(2, 7)),
+          quarter: gl.quarter || 1,
+          clock: gl.clock || '04:00',
+          scorerId: resolveGoalPlayerId(gl, 'scorerId', 'scorerLabel'),
+          assistId: resolveGoalPlayerId(gl, 'assistId', 'assistLabel')
+        })),
+        playerStats: draftPlayerStats,
+        rotationSnapshot: game.rotationSnapshot || null
+      };
+
+      document.getElementById('histEditDate').value = histDraft.date;
+      document.getElementById('histEditTeamName').value = histDraft.teamName;
+      document.getElementById('histEditOpponent').value = histDraft.opponent;
+      document.getElementById('histEditOurScore').value = histDraft.ourScore;
+      document.getElementById('histEditOppScore').value = histDraft.oppScore;
+
+      renderHistEditGoals();
+      renderHistEditPlayers();
+      renderHistRotationSnapshot();
+
+      document.getElementById('gameDetailModal').classList.remove('hidden');
+    }
+
+    function closeGameDetailModal() {
+      editingHistoryGameId = null;
+      histDraft = null;
+      document.getElementById('gameDetailModal').classList.add('hidden');
+    }
+
+    function adjustHistDraftScore(side, delta) {
+      if (!histDraft) return;
+      if (side === 'our') {
+        const cur = parseInt(document.getElementById('histEditOurScore').value, 10) || 0;
+        document.getElementById('histEditOurScore').value = Math.max(0, cur + delta);
+      } else {
+        const cur = parseInt(document.getElementById('histEditOppScore').value, 10) || 0;
+        document.getElementById('histEditOppScore').value = Math.max(0, cur + delta);
+      }
+    }
+
+    function renderHistEditGoals() {
+      const container = document.getElementById('histEditGoalsList');
+      if (!histDraft.goals || histDraft.goals.length === 0) {
+        container.innerHTML = `<div class="text-xs text-slate-500 italic py-2 text-center bg-slate-950 rounded-xl border border-slate-800">No team goals logged for this game. Tap "+ Add Goal" to add one.</div>`;
+        return;
+      }
+
+      const scorerOptions = [
+        ...state.players.map(p => ({ id: p.id, label: formatPlayerBadge(p) })),
+        { id: 'OWN_GOAL', label: 'Own Goal / Team' }
+      ];
+
+      const assistOptions = [
+        { id: '', label: 'Unassisted' },
+        ...state.players.map(p => ({ id: p.id, label: formatPlayerBadge(p) }))
+      ];
+
+      container.innerHTML = histDraft.goals.map((g, idx) => `
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div class="flex items-center gap-1.5">
+            <select onchange="updateHistGoalField(${idx}, 'quarter', Number(this.value))"
+              class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-emerald-300 font-bold">
+              ${[1, 2, 3, 4].map(q => `<option value="${q}" ${Number(g.quarter) === q ? 'selected' : ''}>Q${q}</option>`).join('')}
+            </select>
+            <input type="text" value="${escapeHtml(g.clock || '04:00')}" maxlength="5"
+              onchange="updateHistGoalField(${idx}, 'clock', this.value)"
+              class="w-14 bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-center mono text-slate-300" />
+          </div>
+
+          <div class="flex items-center gap-1.5 flex-1 min-w-[180px]">
+            <span class="text-slate-400">⚽</span>
+            <select onchange="updateHistGoalField(${idx}, 'scorerId', this.value)"
+              class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white font-bold">
+              ${scorerOptions.map(o => `<option value="${o.id}" ${g.scorerId === o.id ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="flex items-center gap-1.5 flex-1 min-w-[170px]">
+            <span class="text-slate-400">👟</span>
+            <select onchange="updateHistGoalField(${idx}, 'assistId', this.value || null)"
+              class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-blue-300 font-semibold">
+              ${assistOptions.map(o => `<option value="${o.id}" ${(g.assistId || '') === o.id ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+            </select>
+            <button onclick="removeHistDraftGoal(${idx})" class="text-slate-500 hover:text-rose-400 px-1.5 font-bold" title="Remove Goal">✕</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function updateHistGoalField(idx, field, value) {
+      if (!histDraft || !histDraft.goals[idx]) return;
+      histDraft.goals[idx][field] = value;
+    }
+
+    function addHistDraftGoal() {
+      if (!histDraft) return;
+      const defaultScorer = state.players.length > 0 ? state.players[0].id : 'OWN_GOAL';
+      histDraft.goals.push({
+        id: 'hg_' + Date.now(),
+        quarter: 1,
+        clock: '04:00',
+        scorerId: defaultScorer,
+        assistId: null
+      });
+      const curScore = parseInt(document.getElementById('histEditOurScore').value, 10) || 0;
+      if (histDraft.goals.length > curScore) {
+        document.getElementById('histEditOurScore').value = histDraft.goals.length;
+      }
+      renderHistEditGoals();
+    }
+
+    function removeHistDraftGoal(idx) {
+      if (!histDraft) return;
+      histDraft.goals.splice(idx, 1);
+      const curScore = parseInt(document.getElementById('histEditOurScore').value, 10) || 0;
+      document.getElementById('histEditOurScore').value = Math.max(0, curScore - 1);
+      renderHistEditGoals();
+    }
+
+    function renderHistEditPlayers() {
+      const container = document.getElementById('histEditPlayersList');
+      if (!histDraft || state.players.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+
+      container.innerHTML = state.players.map(p => {
+        const ps = histDraft.playerStats[p.id] || { present: true, BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0 };
+        return `
+          <div class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div class="flex items-center gap-2 min-w-[120px]">
+              <input type="checkbox" ${ps.present ? 'checked' : ''}
+                onchange="toggleHistPlayerPresent('${p.id}', this.checked)"
+                class="rounded accent-emerald-500" />
+              <span class="font-bold text-white ${ps.present ? '' : 'line-through text-slate-500'}">${escapeHtml(formatPlayerBadge(p))}</span>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap text-[11px]">
+              <label class="text-slate-400">🪑<input type="number" step="0.5" min="0" value="${ps.BENCH || 0}"
+                onchange="updateHistPlayerStat('${p.id}', 'BENCH', this.value)"
+                class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
+              <label class="text-rose-400">FWD<input type="number" step="0.5" min="0" value="${ps.FWD || 0}"
+                onchange="updateHistPlayerStat('${p.id}', 'FWD', this.value)"
+                class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
+              <label class="text-blue-400">MID<input type="number" step="0.5" min="0" value="${ps.MID || 0}"
+                onchange="updateHistPlayerStat('${p.id}', 'MID', this.value)"
+                class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
+              <label class="text-emerald-400">DEF<input type="number" step="0.5" min="0" value="${ps.DEF || 0}"
+                onchange="updateHistPlayerStat('${p.id}', 'DEF', this.value)"
+                class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
+              <label class="text-amber-400">GK<input type="number" step="0.5" min="0" value="${ps.GK || 0}"
+                onchange="updateHistPlayerStat('${p.id}', 'GK', this.value)"
+                class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function toggleHistPlayerPresent(playerId, isPresent) {
+      if (!histDraft || !histDraft.playerStats[playerId]) return;
+      histDraft.playerStats[playerId].present = isPresent;
+      histDraft.playerStats[playerId].isLegacyUnrecorded = false;
+      renderHistEditPlayers();
+    }
+
+    function updateHistPlayerStat(playerId, zone, val) {
+      if (!histDraft || !histDraft.playerStats[playerId]) return;
+      histDraft.playerStats[playerId][zone] = Math.max(0, parseFloat(val) || 0);
+      histDraft.playerStats[playerId].isLegacyUnrecorded = false;
+    }
+
+    function renderHistRotationSnapshot() {
+      const sec = document.getElementById('histRotationSnapshotSection');
+      const list = document.getElementById('histRotationSnapshotList');
+      if (!histDraft || !histDraft.rotationSnapshot || histDraft.rotationSnapshot.length === 0) {
+        sec.classList.add('hidden');
+        list.innerHTML = '';
+        return;
+      }
+      sec.classList.remove('hidden');
+      list.innerHTML = histDraft.rotationSnapshot.map(s => `
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-2">
+          <div class="font-bold text-emerald-300">Q${s.quarter} • Shift ${s.part}</div>
+          <div class="text-slate-400">🪑 Out: <span class="text-white font-semibold">${s.benchNames && s.benchNames.length ? s.benchNames.map(escapeHtml).join(', ') : 'None'}</span></div>
+        </div>
+      `).join('');
+    }
+
+    function saveGameDetailEdits() {
+      if (!editingHistoryGameId || !histDraft) return;
+      const gameIdx = state.gameHistory.findIndex(g => g.id === editingHistoryGameId);
+      if (gameIdx < 0) return;
+
+      const oldGame = state.gameHistory[gameIdx];
+
+      // 1. Reconcile Goals & Assists Deltas on Season Leaderboard
+      const oldGoalsCount = {};
+      const oldAssistsCount = {};
+      (oldGame.goals || []).forEach(gl => {
+        const sId = resolveGoalPlayerId(gl, 'scorerId', 'scorerLabel');
+        const aId = resolveGoalPlayerId(gl, 'assistId', 'assistLabel');
+        if (sId && sId !== 'OWN_GOAL') oldGoalsCount[sId] = (oldGoalsCount[sId] || 0) + 1;
+        if (aId) oldAssistsCount[aId] = (oldAssistsCount[aId] || 0) + 1;
+      });
+
+      const newGoalsCount = {};
+      const newAssistsCount = {};
+      const savedGoals = histDraft.goals.map(gl => {
+        if (gl.scorerId && gl.scorerId !== 'OWN_GOAL') {
+          newGoalsCount[gl.scorerId] = (newGoalsCount[gl.scorerId] || 0) + 1;
+        }
+        if (gl.assistId) {
+          newAssistsCount[gl.assistId] = (newAssistsCount[gl.assistId] || 0) + 1;
+        }
+        return {
+          id: gl.id,
+          quarter: gl.quarter,
+          clock: gl.clock,
+          scorerId: gl.scorerId,
+          assistId: gl.assistId || null,
+          scorerLabel: getPlayerDisplayById(gl.scorerId),
+          assistLabel: gl.assistId ? getPlayerDisplayById(gl.assistId) : null
+        };
+      });
+
+      state.players.forEach(p => {
+        const gDelta = (newGoalsCount[p.id] || 0) - (oldGoalsCount[p.id] || 0);
+        const aDelta = (newAssistsCount[p.id] || 0) - (oldAssistsCount[p.id] || 0);
+        p.prior.goals = Math.max(0, (p.prior.goals || 0) + gDelta);
+        p.prior.assists = Math.max(0, (p.prior.assists || 0) + aDelta);
+
+        // 2. Reconcile Player Participation & Quarter Shifts if recorded/edited
+        const newPs = histDraft.playerStats[p.id];
+        const oldPs = oldGame.playerStats ? oldGame.playerStats[p.id] : null;
+        if (newPs && !newPs.isLegacyUnrecorded) {
+          if (oldPs) {
+            const gpDelta = (newPs.present ? 1 : 0) - (oldPs.present ? 1 : 0);
+            p.prior.gamesPlayed = Math.max(0, (p.prior.gamesPlayed || 0) + gpDelta);
+            ['BENCH', 'FWD', 'MID', 'DEF', 'GK'].forEach(z => {
+              const zDelta = (Number(newPs[z]) || 0) - (Number(oldPs[z]) || 0);
+              p.prior[z] = Math.max(0, Math.round(((p.prior[z] || 0) + zDelta) * 100) / 100);
+            });
+          }
+        }
+      });
+
+      // 3. Save Updated Game Object
+      state.gameHistory[gameIdx] = {
+        ...oldGame,
+        date: document.getElementById('histEditDate').value.trim() || oldGame.date,
+        teamName: document.getElementById('histEditTeamName').value.trim() || state.teamName,
+        opponent: document.getElementById('histEditOpponent').value.trim() || 'Opponent',
+        ourScore: Math.max(0, parseInt(document.getElementById('histEditOurScore').value, 10) || 0),
+        oppScore: Math.max(0, parseInt(document.getElementById('histEditOppScore').value, 10) || 0),
+        goals: savedGoals,
+        playerStats: histDraft.playerStats
+      };
+
+      closeGameDetailModal();
+      recalculateSchedule();
+      renderAll();
+    }
+
+    function deleteCurrentModalHistoryGame() {
+      if (!editingHistoryGameId) return;
+      if (!confirm('Delete this game from history and subtract its goals, assists, and shifts from season totals?')) return;
+      deleteHistoryGame(editingHistoryGameId);
+      closeGameDetailModal();
+    }
+
     function deleteHistoryGame(gameId) {
+      const game = state.gameHistory.find(g => g.id === gameId);
+      if (game) {
+        // Subtract goals and assists from season totals
+        (game.goals || []).forEach(gl => {
+          const sId = resolveGoalPlayerId(gl, 'scorerId', 'scorerLabel');
+          const aId = resolveGoalPlayerId(gl, 'assistId', 'assistLabel');
+          const scorer = state.players.find(p => p.id === sId);
+          if (scorer) scorer.prior.goals = Math.max(0, (scorer.prior.goals || 0) - 1);
+          const assister = state.players.find(p => p.id === aId);
+          if (assister) assister.prior.assists = Math.max(0, (assister.prior.assists || 0) - 1);
+        });
+
+        // Subtract per-game player shifts if stored
+        if (game.playerStats) {
+          state.players.forEach(p => {
+            const ps = game.playerStats[p.id];
+            if (ps && !ps.isLegacyUnrecorded) {
+              if (ps.present) p.prior.gamesPlayed = Math.max(0, (p.prior.gamesPlayed || 0) - 1);
+              ['BENCH', 'FWD', 'MID', 'DEF', 'GK'].forEach(z => {
+                p.prior[z] = Math.max(0, Math.round(((p.prior[z] || 0) - (Number(ps[z]) || 0)) * 100) / 100);
+              });
+            }
+          });
+        }
+      }
+
       state.gameHistory = state.gameHistory.filter(g => g.id !== gameId);
-      saveState();
-      renderStatsAndHistoryTab();
+      recalculateSchedule();
+      renderAll();
     }
 
     // =========================================================================
@@ -1842,6 +2588,10 @@
       const messages = [];
 
       state.computedShifts.forEach(s => {
+        if (state.shiftsPerQuarter === 2 && s.part === 2 && state.fullQuarterLocks[s.quarter]) {
+          return; // Skip duplicate 2nd shift bubble when Full Quarter is locked
+        }
+
         const qOrd = ordinals[s.quarter];
         const benchNames = s.benchIds.map(id => playerMap[id]).filter(Boolean);
         const benchStr = benchNames.length === 0
@@ -1850,7 +2600,8 @@
             ? benchNames[0]
             : benchNames.slice(0, -1).join(', ') + ' and ' + benchNames[benchNames.length - 1];
 
-        const prefix = state.shiftsPerQuarter === 1
+        const isFullQtr = state.shiftsPerQuarter === 1 || !!state.fullQuarterLocks[s.quarter];
+        const prefix = isFullQtr
           ? `Out ${qOrd}`
           : (s.part === 1 ? `Out ${qOrd}` : `2nd part of ${qOrd}`);
 
@@ -1937,9 +2688,10 @@
       };
 
       const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
-      const partLabel = state.shiftsPerQuarter === 2
-        ? (shift.part === 1 ? `1st ${shiftMins}m` : `2nd ${shiftMins}m`)
-        : `Full ${state.quarterMins}m`;
+      const isFullQtr = state.shiftsPerQuarter === 1 || !!state.fullQuarterLocks[shift.quarter];
+      const partLabel = isFullQtr
+        ? `Full ${state.quarterMins}m`
+        : (shift.part === 1 ? `1st ${shiftMins}m` : `2nd ${shiftMins}m`);
 
       document.getElementById('modalTitle').textContent = `Edit Quarter ${shift.quarter} • ${partLabel}`;
       document.getElementById('editModal').classList.remove('hidden');
@@ -1952,7 +2704,7 @@
     }
 
     function renderModalPlayers() {
-      const presentPlayers = state.players.filter(p => p.present);
+      const presentPlayers = getSortedRosterList(state.players.filter(p => p.present));
       const targetBench = Math.max(0, presentPlayers.length - getTotalFieldSlots());
 
       document.getElementById('modalBenchCounter').textContent =
@@ -2035,7 +2787,7 @@
     }
 
     // =========================================================================
-    // ROSTER, ATTENDANCE & FORMAT HANDLERS
+    // ROSTER, ATTENDANCE & FORMAT HANDLERS (PRESERVES 1ST SHIFT ON MODE SWITCH)
     // =========================================================================
     function addPlayerFromOnboarding() {
       const numEl = document.getElementById('onboardPlayerNum');
@@ -2162,9 +2914,40 @@
     }
 
     function handleTimingChange() {
-      state.quarterMins = parseInt(document.getElementById('quarterMinsSelect').value, 10) || 8;
-      state.shiftsPerQuarter = parseInt(document.getElementById('shiftsPerQtrSelect').value, 10) || 2;
-      state.lockedShifts = {};
+      const newQuarterMins = parseInt(document.getElementById('quarterMinsSelect').value, 10) || 8;
+      const newShiftsPerQtr = parseInt(document.getElementById('shiftsPerQtrSelect').value, 10) || 2;
+      const oldShiftsPerQtr = state.shiftsPerQuarter;
+
+      // Preserve the 1st shift of each quarter when switching between 2 Shifts/Qtr and Full Quarters (1 Shift/Qtr)
+      if (oldShiftsPerQtr === 2 && newShiftsPerQtr === 1) {
+        const preservedLocks = {};
+        for (let q = 1; q <= 4; q++) {
+          const firstShiftIdx = (q - 1) * 2;
+          const sourceShift = state.lockedShifts[firstShiftIdx] || state.computedShifts[firstShiftIdx];
+          if (sourceShift) {
+            preservedLocks[q - 1] = {
+              benchIds: [...(sourceShift.benchIds || [])],
+              positions: { ...(sourceShift.positions || {}) }
+            };
+          }
+        }
+        state.lockedShifts = preservedLocks;
+      } else if (oldShiftsPerQtr === 1 && newShiftsPerQtr === 2) {
+        const preservedLocks = {};
+        for (let q = 1; q <= 4; q++) {
+          const sourceShift = state.lockedShifts[q - 1] || state.computedShifts[q - 1];
+          if (sourceShift) {
+            preservedLocks[(q - 1) * 2] = {
+              benchIds: [...(sourceShift.benchIds || [])],
+              positions: { ...(sourceShift.positions || {}) }
+            };
+          }
+        }
+        state.lockedShifts = preservedLocks;
+      }
+
+      state.quarterMins = newQuarterMins;
+      state.shiftsPerQuarter = newShiftsPerQtr;
       resetTimer();
       recalculateSchedule();
       renderAll();
@@ -2172,6 +2955,17 @@
 
     function toggleFullQuarter(q) {
       state.fullQuarterLocks[q] = !state.fullQuarterLocks[q];
+      // Lock the 1st shift of this quarter so its lineup is preserved
+      if (state.shiftsPerQuarter === 2) {
+        const firstIdx = (q - 1) * 2;
+        const firstShift = state.computedShifts[firstIdx];
+        if (firstShift && !state.lockedShifts[firstIdx]) {
+          state.lockedShifts[firstIdx] = {
+            benchIds: [...firstShift.benchIds],
+            positions: { ...firstShift.positions }
+          };
+        }
+      }
       recalculateSchedule();
       renderAll();
     }
@@ -2179,7 +2973,7 @@
     function adjustPrior(playerId, zone, delta) {
       const p = state.players.find(x => x.id === playerId);
       if (p) {
-        p.prior[zone] = Math.max(0, (p.prior[zone] || 0) + delta);
+        p.prior[zone] = Math.max(0, Math.round(((p.prior[zone] || 0) + delta) * 100) / 100);
         recalculateSchedule();
         renderAll();
       }
@@ -2202,8 +2996,98 @@
     }
 
     // =========================================================================
-    // SIDELINE TIMER & WEB AUDIO REFEREE WHISTLE
+    // SIDELINE TIMER, LIVE IN-PLAY PANEL & WEB AUDIO REFEREE WHISTLE
     // =========================================================================
+    function renderLiveInPlayPanel() {
+      const container = document.getElementById('liveInPlayContainer');
+      if (!container) return;
+
+      if (state.players.filter(p => p.present).length === 0) {
+        container.innerHTML = `<div class="text-xs text-slate-500 italic">Add or select present players below to view live on-field positions.</div>`;
+        return;
+      }
+
+      const activeShift = getActiveShiftObject();
+      if (!activeShift) {
+        container.innerHTML = '';
+        return;
+      }
+
+      const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
+      const benchNames = activeShift.benchIds.map(id => playerMap[id]).filter(Boolean);
+      const isFullQtr = isCurrentQuarterFullSub();
+      const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
+      const shiftDesc = isFullQtr
+        ? `Q${timer.quarter} • Full Quarter (${state.quarterMins}m)`
+        : `Q${timer.quarter} • ${activeShift.part === 1 ? '1st' : '2nd'} Shift (${shiftMins}m)`;
+
+      const posGroups = { FWD: [], MID: [], DEF: [], GK: [] };
+      const allFieldNames = [];
+      Object.entries(activeShift.positions || {}).forEach(([pid, pos]) => {
+        if (!activeShift.benchIds.includes(pid) && playerMap[pid]) {
+          allFieldNames.push(playerMap[pid]);
+          if (!posGroups[pos]) posGroups[pos] = [];
+          posGroups[pos].push(playerMap[pid]);
+        }
+      });
+
+      container.innerHTML = `
+        <div class="bg-slate-950/90 border border-emerald-500/40 rounded-xl p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-300">Currently In Play — ${shiftDesc}</span>
+            </div>
+            <button onclick="openEditModal(${activeShift.index})" class="text-[11px] font-semibold text-emerald-400 hover:underline">
+              ✏️ Edit Lineup
+            </button>
+          </div>
+
+          <div class="flex items-center gap-1.5 flex-wrap pt-0.5">
+            <span class="text-[11px] font-bold uppercase text-slate-400">🪑 Bench:</span>
+            ${benchNames.length > 0
+              ? benchNames.map(n => `<span class="px-2 py-0.5 rounded-md text-xs font-bold pos-BENCH">${escapeHtml(n)}</span>`).join('')
+              : `<span class="text-xs text-slate-500 italic">None (All Play)</span>`
+            }
+          </div>
+
+          ${state.trackPositions ? `
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1.5 border-t border-slate-800/80 text-xs">
+              ${posGroups.FWD.length ? `
+                <div class="bg-slate-900/90 border border-rose-500/30 rounded-lg p-2">
+                  <div class="text-[10px] font-extrabold text-rose-400 uppercase">⚔️ Attack (FWD)</div>
+                  <div class="font-bold text-white mt-0.5">${posGroups.FWD.map(escapeHtml).join(', ')}</div>
+                </div>
+              ` : ''}
+              ${posGroups.MID.length ? `
+                <div class="bg-slate-900/90 border border-blue-500/30 rounded-lg p-2">
+                  <div class="text-[10px] font-extrabold text-blue-400 uppercase">⚡ Midfield (MID)</div>
+                  <div class="font-bold text-white mt-0.5">${posGroups.MID.map(escapeHtml).join(', ')}</div>
+                </div>
+              ` : ''}
+              ${posGroups.DEF.length ? `
+                <div class="bg-slate-900/90 border border-emerald-500/30 rounded-lg p-2">
+                  <div class="text-[10px] font-extrabold text-emerald-400 uppercase">🛡️ Defense (DEF)</div>
+                  <div class="font-bold text-white mt-0.5">${posGroups.DEF.map(escapeHtml).join(', ')}</div>
+                </div>
+              ` : ''}
+              ${posGroups.GK.length ? `
+                <div class="bg-slate-900/90 border border-amber-500/30 rounded-lg p-2">
+                  <div class="text-[10px] font-extrabold text-amber-400 uppercase">🧤 Goalie (GK)</div>
+                  <div class="font-bold text-white mt-0.5">${posGroups.GK.map(escapeHtml).join(', ')}</div>
+                </div>
+              ` : ''}
+            </div>
+          ` : `
+            <div class="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-800/80 text-xs">
+              <span class="text-[11px] font-bold uppercase text-emerald-400">🏃 On Field:</span>
+              <span class="font-bold text-white">${allFieldNames.map(escapeHtml).join(', ')}</span>
+            </div>
+          `}
+        </div>
+      `;
+    }
+
     function renderTimerUI() {
       const totalSec = state.quarterMins * 60;
       const midSec = Math.floor(totalSec / 2);
@@ -2216,7 +3100,7 @@
       for (let q = 1; q <= 4; q++) {
         const btn = document.getElementById('qTab' + q);
         btn.className = q === timer.quarter
-          ? 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950'
+          ? 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950 shadow'
           : 'px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400 hover:text-white';
       }
 
@@ -2229,12 +3113,21 @@
         startBtn.className = 'px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm transition shadow-lg shadow-emerald-500/20';
       }
 
+      const fullQuarterLive = isCurrentQuarterFullSub();
       const badge = document.getElementById('timerShiftBadge');
-      if (state.shiftsPerQuarter === 2) {
+      const syncMidBtn = document.getElementById('syncMidBtn');
+      const splitProgress = document.getElementById('timerProgressSplit');
+      const singleProgress = document.getElementById('timerProgressSingle');
+
+      if (!fullQuarterLive) {
         const isFirstHalf = timer.secondsLeft > midSec;
         badge.textContent = isFirstHalf
           ? `Q${timer.quarter} • 1st Shift`
           : `Q${timer.quarter} • 2nd Shift`;
+
+        syncMidBtn.classList.remove('hidden');
+        splitProgress.classList.remove('hidden');
+        singleProgress.classList.add('hidden');
 
         const p1 = isFirstHalf ? ((timer.secondsLeft - midSec) / midSec) * 100 : 0;
         const p2 = isFirstHalf ? 100 : (timer.secondsLeft / midSec) * 100;
@@ -2242,10 +3135,15 @@
         document.getElementById('progressHalf2').style.width = `${Math.max(0, Math.min(100, p2))}%`;
       } else {
         badge.textContent = `Q${timer.quarter} • Full Quarter`;
+        syncMidBtn.classList.add('hidden');
+        splitProgress.classList.add('hidden');
+        singleProgress.classList.remove('hidden');
+
         const pct = (timer.secondsLeft / totalSec) * 100;
-        document.getElementById('progressHalf1').style.width = `${pct}%`;
-        document.getElementById('progressHalf2').style.width = `${pct}%`;
+        document.getElementById('progressFullBar').style.width = `${Math.max(0, Math.min(100, pct))}%`;
       }
+
+      renderLiveInPlayPanel();
     }
 
     function toggleTimer() {
@@ -2264,7 +3162,7 @@
         timer.secondsLeft--;
         const midSec = Math.floor((state.quarterMins * 60) / 2);
 
-        if (state.shiftsPerQuarter === 2 && timer.secondsLeft === midSec && !timer.midAlertFired) {
+        if (!isCurrentQuarterFullSub() && timer.secondsLeft === midSec && !timer.midAlertFired) {
           timer.midAlertFired = true;
           playWhistle(2);
           showSubAlert(timer.quarter, 2);
@@ -2279,25 +3177,30 @@
           }
         }
         renderTimerUI();
+        renderScheduleGrid();
       }
     }
 
     function setTimerQuarter(q) {
       timer.quarter = q;
       resetTimer();
+      renderScheduleGrid();
     }
 
     function adjustTimer(deltaSec) {
       const maxSec = state.quarterMins * 60;
       timer.secondsLeft = Math.max(0, Math.min(maxSec, timer.secondsLeft + deltaSec));
       renderTimerUI();
+      renderScheduleGrid();
     }
 
     function syncMidQuarter() {
+      if (isCurrentQuarterFullSub()) return;
       timer.secondsLeft = Math.floor((state.quarterMins * 60) / 2);
       timer.midAlertFired = true;
       showSubAlert(timer.quarter, 2);
       renderTimerUI();
+      renderScheduleGrid();
     }
 
     function resetTimer() {
