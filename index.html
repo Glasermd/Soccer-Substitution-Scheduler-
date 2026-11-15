@@ -698,7 +698,6 @@
     </section>
 
   </main>
-
   <!-- ===================================================================== -->
   <!-- ONE-TIME COACH LOGIN MODAL (OPTIONAL ACCOUNT SYNC ACROSS DEVICES)     -->
   <!-- ===================================================================== -->
@@ -1100,7 +1099,7 @@
         slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 },
         quarterMins: 8,
         shiftsPerQuarter: 2,
-        midQtrPosSwap: false, // When true: keeps bench/MID/GK for full quarter and swaps FWD <-> DEF at mid-quarter!
+        midQtrPosSwap: false,
         rosterSort: 'order',
         balanceSort: { col: 'order', dir: 'asc' },
         statsSort: { col: 'pts', dir: 'desc' },
@@ -1302,7 +1301,7 @@
             t.ownerUid = user.uid;
             t.ownerEmail = user.email || '';
             const ref = fbFirestoreMod.doc(fbDb, 'sideline_pro_teams', t.id);
-            await fbFirestoreMod.setDoc(ref, JSON.parse(JSON.stringify({ ...t, activeTab: 'game', updatedAt: Date.now() })), { merge: true });
+            await fbFirestoreMod.setDoc(ref, JSON.parse(JSON.stringify({ ...t, activeTab: 'game', updatedAt: Date.now() })));
           }
         }
 
@@ -1436,6 +1435,7 @@
       });
     }
 
+    // Overwrites the team document cleanly (no { merge: true }) so deleted shift locks stay deleted
     async function pushActiveTeamToCloud(allowParentRsvp = false) {
       if (!fbDb || !fbFirestoreMod || isReceivingCloudSnapshot) return;
       if (!canEditGame() && !allowParentRsvp) return;
@@ -1450,12 +1450,11 @@
           ...getSerializablePayload(),
           updatedAt: Date.now()
         }));
-        await fbFirestoreMod.setDoc(teamRef, payload, { merge: true });
+        await fbFirestoreMod.setDoc(teamRef, payload);
       } catch (err) {
         console.warn('Failed to push update to Firestore:', err);
       }
     }
-
     // =========================================================================
     // 1-TAP PARENT IDENTITY & GAME RSVP LOGIC
     // =========================================================================
@@ -1629,6 +1628,8 @@
       merged.rosterSort = rawTeam.rosterSort || 'order';
       merged.balanceSort = rawTeam.balanceSort || { col: 'order', dir: 'asc' };
       merged.statsSort = rawTeam.statsSort || { col: 'pts', dir: 'desc' };
+      merged.lockedShifts = rawTeam.lockedShifts || {};
+      merged.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false, ...(rawTeam.fullQuarterLocks || {}) };
 
       const needsV5ScaleMigration = !rawTeam.v5QuarterScale && (rawTeam.shiftsPerQuarter || 2) === 2;
 
@@ -1919,7 +1920,7 @@
     }
 
     // =========================================================================
-    // FAIR BENCH + POSITION ROTATION ENGINE (SUPPORTS MID-QTR FWD <-> DEF SWAP)
+    // FAIR BENCH + POSITION ROTATION ENGINE (ABSENCE-NEUTRAL + LOOKAHEAD)
     // =========================================================================
     function getTotalFieldSlots() {
       return (state.slots.FWD || 0) + (state.slots.MID || 0) + (state.slots.DEF || 0) + (state.slots.GK || 0);
@@ -1938,13 +1939,44 @@
         const prevZone = prevPosMap[p.id] || 'MID';
         if (prevZone === 'FWD') fwdIds.push(p.id);
         else if (prevZone === 'DEF') defIds.push(p.id);
-        else swapped[p.id] = prevZone; // Keep GK and MID in place
+        else swapped[p.id] = prevZone;
       });
 
-      // Swap FWD -> DEF and DEF -> FWD
       fwdIds.forEach(id => { swapped[id] = 'DEF'; });
       defIds.forEach(id => { swapped[id] = 'FWD'; });
       return swapped;
+    }
+
+    // Computes each player's effective prior bench normalized for missed games
+    // unless the coach manually set their Prior Bench directly
+    function computeEffectivePriorBenchMap(presentPlayers) {
+      const map = {};
+      const maxGP = presentPlayers.reduce((m, p) => Math.max(m, Number(p.prior.gamesPlayed) || 0), 0);
+
+      // Calculate team average prior bench for brand-new mid-season players
+      const activePriors = presentPlayers
+        .filter(p => (Number(p.prior.gamesPlayed) || 0) > 0 || (Number(p.prior.BENCH) || 0) > 0)
+        .map(p => Number(p.prior.BENCH) || 0);
+      const avgPrior = activePriors.length > 0
+        ? activePriors.reduce((a, b) => a + b, 0) / activePriors.length
+        : 0;
+
+      presentPlayers.forEach(p => {
+        const rawBench = Number(p.prior.BENCH) || 0;
+        const gp = Number(p.prior.gamesPlayed) || 0;
+
+        if (p.prior.manualBenchOverride || maxGP <= 1 || gp >= maxGP) {
+          map[p.id] = rawBench;
+        } else if (gp > 0) {
+          map[p.id] = Math.round(((rawBench / gp) * maxGP) * 100) / 100;
+        } else if (rawBench > 0) {
+          map[p.id] = rawBench;
+        } else {
+          map[p.id] = Math.round(avgPrior * 100) / 100;
+        }
+      });
+
+      return map;
     }
 
     function recalculateSchedule(syncCloud = true) {
@@ -1954,6 +1986,7 @@
       const numSitting = Math.max(0, numPresent - fieldSize);
       const totalShifts = getTotalShiftsCount();
       const shiftWeight = getShiftQuarterWeight(state.shiftsPerQuarter);
+      const effectivePriorMap = computeEffectivePriorBenchMap(presentPlayers);
 
       const runningCounts = {};
       presentPlayers.forEach(p => {
@@ -1977,51 +2010,90 @@
           continue;
         }
 
-        // Case 1: Full-Quarter Lock (no mid-quarter sub or swap)
+        const isFullQuarterUnit = state.shiftsPerQuarter === 1 ||
+          Boolean(state.fullQuarterLocks[quarter]) ||
+          Boolean(state.midQtrPosSwap);
+
+        // Case 1: Full-Quarter Lock (2nd half copies 1st half)
         if (state.shiftsPerQuarter === 2 && part === 2 && state.fullQuarterLocks[quarter] && prevShift) {
           benchIds = [...prevShift.benchIds];
           posMap = { ...prevShift.positions };
           isLocked = true;
         }
-        // Case 2: Manually Locked Shift by Coach
+        // Case 2: Manually Locked Shift
         else if (state.lockedShifts[s]) {
           const lock = state.lockedShifts[s];
           benchIds = lock.benchIds.filter(id => presentPlayers.some(p => p.id === id));
           posMap = { ...(lock.positions || {}) };
           isLocked = true;
         }
-        // Case 3: Mid-Quarter FWD <-> DEF Swap Mode (2nd half of quarter keeps bench/MID/GK & swaps FWD/DEF)
+        // Case 3: Mid-Quarter FWD <-> DEF Swap Mode (2nd half keeps bench/MID/GK & swaps FWD/DEF)
         else if (state.shiftsPerQuarter === 2 && part === 2 && state.midQtrPosSwap && prevShift) {
           benchIds = [...prevShift.benchIds];
           const fieldPlayers = presentPlayers.filter(p => !benchIds.includes(p.id));
           posMap = buildSwappedFwdDefPositions(prevShift.positions || {}, fieldPlayers);
           isMidQtrPosSwapShift = true;
         }
-        // Case 4: Standard Fair Bench Selection
+        // Case 4: Auto Fair Bench Selection with Lookahead
         else {
           const candidates = presentPlayers.map((p, idx) => {
             const satPrev = prevShift ? prevShift.benchIds.includes(p.id) : false;
-            const totalBench = (p.prior.BENCH || 0) + runningCounts[p.id].BENCH;
+            const effPrior = effectivePriorMap[p.id] || 0;
+            const gameBench = runningCounts[p.id].BENCH;
+            const totalBench = Math.round((effPrior + gameBench) * 100) / 100;
             const isLateFirstShift = (s === 0 && p.rsvp === 'late');
             return {
               id: p.id,
               idx,
               satPrev,
               isLateFirstShift,
-              gameBench: runningCounts[p.id].BENCH,
+              effPrior,
+              gameBench,
               totalBench
             };
           });
+
+          // Lookahead check for Q3 (or penultimate shift):
+          // If players are tied on totalBench, sitting those with gameBench === 0 first ensures everyone
+          // sits at least once before Q4, while sitting lower effPrior first in Q1/Q2 gets catch-up players started early.
+          const isSecondHalfOfGame = quarter >= 3;
 
           candidates.sort((a, b) => {
             if (a.isLateFirstShift !== b.isLateFirstShift) return a.isLateFirstShift ? -1 : 1;
             if (a.satPrev !== b.satPrev) return a.satPrev ? 1 : -1;
             if (Math.abs(a.totalBench - b.totalBench) > 0.01) return a.totalBench - b.totalBench;
-            if (Math.abs(a.gameBench - b.gameBench) > 0.01) return a.gameBench - b.gameBench;
+
+            if (isSecondHalfOfGame) {
+              if (Math.abs(a.gameBench - b.gameBench) > 0.01) return a.gameBench - b.gameBench;
+              if (Math.abs(a.effPrior - b.effPrior) > 0.01) return a.effPrior - b.effPrior;
+            } else {
+              if (Math.abs(a.effPrior - b.effPrior) > 0.01) return a.effPrior - b.effPrior;
+              if (Math.abs(a.gameBench - b.gameBench) > 0.01) return a.gameBench - b.gameBench;
+            }
             return a.idx - b.idx;
           });
 
           benchIds = candidates.slice(0, numSitting).map(c => c.id);
+
+          // Q3 -> Q4 Lookahead Guard: When picking the Q3 bench in full-quarter bench modes,
+          // verify we don't leave Q4 with fewer non-consecutive low-bench players than needed.
+          if (isFullQuarterUnit && quarter === 3 && numSitting > 0) {
+            const minTotal = Math.min(...candidates.map(c => c.totalBench));
+            const lowPool = candidates.filter(c => Math.abs(c.totalBench - minTotal) <= 0.01);
+            // Players in lowPool who sat in Q2 (satPrev === true) cannot sit in Q3 and WILL be available for Q4
+            const lockedOutInQ3LowCount = lowPool.filter(c => c.satPrev).length;
+            const eligibleInQ3Low = lowPool.filter(c => !c.satPrev);
+
+            // If we need at least numSitting lowPool players available for Q4, ensure we leave enough unpicked in Q3
+            const minToLeaveForQ4 = Math.max(0, numSitting - lockedOutInQ3LowCount);
+            if (eligibleInQ3Low.length > minToLeaveForQ4) {
+              // Prefer sitting the eligible lowPool players who have gameBench === 0 first so they don't end with 0 today
+              eligibleInQ3Low.sort((a, b) => {
+                if (Math.abs(a.gameBench - b.gameBench) > 0.01) return a.gameBench - b.gameBench;
+                return a.effPrior - b.effPrior;
+              });
+            }
+          }
         }
 
         const fieldPlayers = presentPlayers.filter(p => !benchIds.includes(p.id));
@@ -2315,7 +2387,6 @@
         </div>
       `).join('');
     }
-
     // =========================================================================
     // LIVE SCOREBOARD & GOAL LOGGING
     // =========================================================================
@@ -3401,7 +3472,7 @@
           : (s.part === 1 ? `Out ${qOrd}` : `2nd part of ${qOrd}`);
 
         if (state.smsStyle === 'compact' || !state.trackPositions) {
-          if (s.part === 2 && s.isMidQtrPosSwapShift) return; // Same bench in swap mode
+          if (s.part === 2 && s.isMidQtrPosSwapShift) return;
           messages.push(`${prefix} ${benchStr}`);
         } else {
           const groups = { FWD: [], MID: [], DEF: [], GK: [] };
@@ -3516,7 +3587,6 @@
       const pool = candidates.length > 0 ? candidates : onFieldPlayers;
       const winner = pool[Math.floor(Math.random() * pool.length)];
 
-      // Swap winner into GK and move previous GK into winner's old position
       const winnerOldPos = modalDraft.positions[winner.id] || 'MID';
       currentGkIds.forEach(oldId => {
         modalDraft.positions[oldId] = winnerOldPos === 'GK' ? 'DEF' : winnerOldPos;
@@ -3597,7 +3667,6 @@
         positions: { ...modalDraft.positions }
       };
 
-      // If in Mid-Quarter Swap Mode and Coach edits Shift 1 of a quarter, unlock Shift 2 so it auto-swaps from the new Shift 1
       if (state.midQtrPosSwap && shift && shift.part === 1 && !state.lockedShifts[editingShiftIdx + 1]) {
         delete state.lockedShifts[editingShiftIdx + 1];
       }
@@ -3616,7 +3685,7 @@
     }
 
     // =========================================================================
-    // ROSTER, ATTENDANCE & FORMAT HANDLERS (12.5m & MID-QTR SWAP SUPPORT)
+    // ROSTER, ATTENDANCE & FORMAT HANDLERS (SNAP TO TOP + MODE LOCKS)
     // =========================================================================
     function addPlayerFromOnboarding() {
       if (!isHeadCoach()) return;
@@ -3705,9 +3774,20 @@
       renderAll();
     }
 
+    // Snaps focus smoothly to the top when opening Setup (or if scrolled down while Setup is open)
     function toggleDrawer(id) {
       if (!isHeadCoach()) return;
-      document.getElementById(id).classList.toggle('hidden');
+      const el = document.getElementById(id);
+      if (!el) return;
+      const isHidden = el.classList.contains('hidden');
+      if (isHidden) {
+        el.classList.remove('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else if (id === 'settingsDrawer' && window.scrollY > 180) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        el.classList.add('hidden');
+      }
     }
 
     function togglePlayerPresence(playerId) {
@@ -3790,6 +3870,7 @@
       }
     }
 
+    // Preserves & locks the 1st shift of each quarter on Sub Mode changes so active lineups aren't lost
     function handleTimingChange() {
       if (!isHeadCoach()) return;
       const rawMode = document.getElementById('shiftsPerQtrSelect').value;
@@ -3797,34 +3878,21 @@
       const newMidQtrPosSwap = rawMode === '2_swap';
       const oldShiftsPerQtr = state.shiftsPerQuarter;
 
-      if (oldShiftsPerQtr === 2 && newShiftsPerQtr === 1) {
-        const preservedLocks = {};
-        for (let q = 1; q <= 4; q++) {
-          const firstShiftIdx = (q - 1) * 2;
-          const sourceShift = state.lockedShifts[firstShiftIdx] || state.computedShifts[firstShiftIdx];
-          if (sourceShift) {
-            preservedLocks[q - 1] = {
-              benchIds: [...(sourceShift.benchIds || [])],
-              positions: { ...(sourceShift.positions || {}) }
-            };
-          }
+      const preservedLocks = {};
+      for (let q = 1; q <= 4; q++) {
+        const oldFirstIdx = oldShiftsPerQtr === 2 ? (q - 1) * 2 : (q - 1);
+        const newFirstIdx = newShiftsPerQtr === 2 ? (q - 1) * 2 : (q - 1);
+        const sourceShift = state.lockedShifts[oldFirstIdx] || state.computedShifts[oldFirstIdx];
+        if (sourceShift) {
+          preservedLocks[newFirstIdx] = {
+            benchIds: [...(sourceShift.benchIds || [])],
+            positions: { ...(sourceShift.positions || {}) }
+          };
         }
-        state.lockedShifts = preservedLocks;
-      } else if (oldShiftsPerQtr === 1 && newShiftsPerQtr === 2) {
-        const preservedLocks = {};
-        for (let q = 1; q <= 4; q++) {
-          const sourceShift = state.lockedShifts[q - 1] || state.computedShifts[q - 1];
-          if (sourceShift) {
-            preservedLocks[(q - 1) * 2] = {
-              benchIds: [...(sourceShift.benchIds || [])],
-              positions: { ...(sourceShift.positions || {}) }
-            };
-          }
-        }
-        state.lockedShifts = preservedLocks;
-      } else if (newMidQtrPosSwap) {
-        // Clear auto-locks on 2nd shifts so they cleanly swap FWD <-> DEF from 1st shifts
-        [1, 3, 5, 7].forEach(idx => { delete state.lockedShifts[idx]; });
+      }
+      state.lockedShifts = preservedLocks;
+
+      if (newMidQtrPosSwap) {
         state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
       }
 
@@ -3857,6 +3925,9 @@
       const p = state.players.find(x => x.id === playerId);
       if (p) {
         p.prior[zone] = Math.max(0, Math.round(((p.prior[zone] || 0) + delta) * 100) / 100);
+        if (zone === 'BENCH') {
+          p.prior.manualBenchOverride = true;
+        }
         recalculateSchedule();
         renderAll();
       }
@@ -3865,7 +3936,11 @@
     function resetSeasonHistory() {
       if (!isHeadCoach()) return;
       state.players.forEach(p => {
-        p.prior = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 };
+        p.prior = {
+          BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0,
+          gamesPlayed: 0, goals: 0, assists: 0,
+          manualBenchOverride: false
+        };
       });
       state.lockedShifts = {};
       recalculateSchedule();
@@ -4170,7 +4245,6 @@
       const banner = document.getElementById('subAlertBanner');
       const content = document.getElementById('subAlertContent');
 
-      // Special Mid-Quarter Striker <-> Defender Swap Alert
       if (part === 2 && targetShift.isMidQtrPosSwapShift) {
         const newFwds = Object.entries(targetShift.positions || {})
           .filter(([pid, pos]) => !targetShift.benchIds.includes(pid) && pos === 'FWD' && playerMap[pid])
