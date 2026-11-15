@@ -243,11 +243,12 @@
           </div>
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-400 mb-1">Sub Mode (Weight)</label>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Sub & Position Rotation Mode</label>
           <select id="shiftsPerQtrSelect" onchange="handleTimingChange()"
             class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white">
-            <option value="2" selected>2 Shifts/Qtr (0.5 each)</option>
-            <option value="1">Full Quarters (1.0 each)</option>
+            <option value="2" selected>2 Bench Shifts/Qtr (0.5 each)</option>
+            <option value="2_swap">Full Qtr Bench + Mid-Qtr FWD⇄DEF Swap</option>
+            <option value="1">Full Quarters (1.0 each, No Mid-Sub)</option>
           </select>
         </div>
       </div>
@@ -987,9 +988,15 @@
         <button onclick="closeEditModal()" class="text-slate-400 hover:text-white text-sm px-2 py-1">✕</button>
       </div>
 
-      <div class="flex items-center justify-between text-xs bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
+      <div class="flex flex-wrap items-center justify-between gap-2 text-xs bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
         <span id="modalBenchCounter" class="font-semibold text-slate-300">Sitting Out: 0</span>
-        <span id="modalSlotSummary" class="text-slate-400">Tap position badge to change</span>
+        <div class="flex items-center gap-2">
+          <button onclick="rollRandomModalGoalie()" id="modalRandomGkBtn"
+            class="hidden px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition">
+            🎲 Random GK
+          </button>
+          <span id="modalSlotSummary" class="text-slate-400">Tap badge to change</span>
+        </div>
       </div>
 
       <div id="modalPlayerList" class="space-y-2"></div>
@@ -1040,7 +1047,6 @@
     const urlRoleParam = (urlParams.get('role') || '').toLowerCase();
     const urlPinParam = urlParams.get('pin') || '';
 
-    // 'coach' (default full admin) | 'assistant' (co-editor) | 'viewer' (parent read-only + 1-tap RSVP)
     let appRole = 'coach';
     if (sharedTeamIdParam) {
       if (urlRoleParam === 'assistant' && urlPinParam) {
@@ -1077,7 +1083,6 @@
       '11v11_433':{ label: '11v11 (3-3-4+GK)',slots: { FWD: 3, MID: 3, DEF: 4, GK: 1 } }
     };
 
-    // Strictly local UI tab state so cloud updates or reloads never hijack the active tab
     let currentActiveTab = 'game';
 
     function createBlankTeam(name = 'My Team') {
@@ -1095,6 +1100,7 @@
         slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 },
         quarterMins: 8,
         shiftsPerQuarter: 2,
+        midQtrPosSwap: false, // When true: keeps bench/MID/GK for full quarter and swaps FWD <-> DEF at mid-quarter!
         rosterSort: 'order',
         balanceSort: { col: 'order', dir: 'asc' },
         statsSort: { col: 'pts', dir: 'desc' },
@@ -1235,7 +1241,6 @@
         fbAuth = authMod.getAuth(app);
         fbAuthMod = authMod;
 
-        // Listen for persistent Coach Login state
         authMod.onAuthStateChanged(fbAuth, async (user) => {
           currentCoachUser = user || null;
           renderCoachAuthButton();
@@ -1292,7 +1297,6 @@
     async function syncCoachOwnedTeams(user) {
       if (!fbDb || !fbFirestoreMod || !user) return;
       try {
-        // 1. Tag any existing local teams on this device with the coach's UID and push to cloud
         for (const t of appStore.teams) {
           if (!t.ownerUid && t.players && t.players.length > 0) {
             t.ownerUid = user.uid;
@@ -1302,7 +1306,6 @@
           }
         }
 
-        // 2. Pull any teams owned by this coach from other devices
         const q = fbFirestoreMod.query(
           fbFirestoreMod.collection(fbDb, 'sideline_pro_teams'),
           fbFirestoreMod.where('ownerUid', '==', user.uid)
@@ -1487,10 +1490,9 @@
       const player = state.players.find(p => p.id === pid);
       if (!player) return;
 
-      player.rsvp = status; // 'going' | 'late' | 'out'
+      player.rsvp = status;
       player.present = status !== 'out';
 
-      // Recompute rotation and push parent RSVP to cloud
       recalculateSchedule(false);
       pushActiveTeamToCloud(true);
       renderAll();
@@ -1619,10 +1621,10 @@
       const base = createBlankTeam(rawTeam.teamName || 'My Team');
       const merged = { ...base, ...rawTeam };
 
-      // Never allow cloud or stored objects to force activeTab to 'stats'
       delete merged.activeTab;
 
       merged.quarterMins = parseFloat(rawTeam.quarterMins) || 8;
+      merged.midQtrPosSwap = Boolean(rawTeam.midQtrPosSwap);
       merged.editPin = String(rawTeam.editPin || base.editPin);
       merged.rosterSort = rawTeam.rosterSort || 'order';
       merged.balanceSort = rawTeam.balanceSort || { col: 'order', dir: 'asc' };
@@ -1768,7 +1770,7 @@
         editPin: state.editPin,
         ownerUid: state.ownerUid || null,
         ownerEmail: state.ownerEmail || null,
-        activeTab: 'game', // Clean up any legacy 'stats' value stored in Firestore
+        activeTab: 'game',
         v5QuarterScale: true,
         teamName: state.teamName,
         trackPositions: state.trackPositions,
@@ -1777,6 +1779,7 @@
         slots: state.slots,
         quarterMins: state.quarterMins,
         shiftsPerQuarter: state.shiftsPerQuarter,
+        midQtrPosSwap: Boolean(state.midQtrPosSwap),
         rosterSort: state.rosterSort,
         players: state.players,
         lockedShifts: state.lockedShifts,
@@ -1850,7 +1853,7 @@
 
     function loadState() {
       initPwaSupport();
-      currentActiveTab = 'game'; // Always open on Live Game & Subs
+      currentActiveTab = 'game';
 
       try {
         const rawMulti = localStorage.getItem(MULTI_TEAM_STORAGE_KEY);
@@ -1916,7 +1919,7 @@
     }
 
     // =========================================================================
-    // FAIR BENCH + POSITION ROTATION ENGINE (QUARTER WEIGHT: 1.0 or 0.5)
+    // FAIR BENCH + POSITION ROTATION ENGINE (SUPPORTS MID-QTR FWD <-> DEF SWAP)
     // =========================================================================
     function getTotalFieldSlots() {
       return (state.slots.FWD || 0) + (state.slots.MID || 0) + (state.slots.DEF || 0) + (state.slots.GK || 0);
@@ -1924,6 +1927,24 @@
 
     function getTotalShiftsCount() {
       return 4 * state.shiftsPerQuarter;
+    }
+
+    function buildSwappedFwdDefPositions(prevPosMap, fieldPlayers) {
+      const swapped = {};
+      const fwdIds = [];
+      const defIds = [];
+
+      fieldPlayers.forEach(p => {
+        const prevZone = prevPosMap[p.id] || 'MID';
+        if (prevZone === 'FWD') fwdIds.push(p.id);
+        else if (prevZone === 'DEF') defIds.push(p.id);
+        else swapped[p.id] = prevZone; // Keep GK and MID in place
+      });
+
+      // Swap FWD -> DEF and DEF -> FWD
+      fwdIds.forEach(id => { swapped[id] = 'DEF'; });
+      defIds.forEach(id => { swapped[id] = 'FWD'; });
+      return swapped;
     }
 
     function recalculateSchedule(syncCloud = true) {
@@ -1949,22 +1970,35 @@
         let benchIds = [];
         let posMap = {};
         let isLocked = false;
+        let isMidQtrPosSwapShift = false;
 
         if (numPresent === 0) {
-          shifts.push({ index: s, quarter, part, benchIds: [], positions: {}, locked: false });
+          shifts.push({ index: s, quarter, part, benchIds: [], positions: {}, locked: false, isMidQtrPosSwapShift: false });
           continue;
         }
 
+        // Case 1: Full-Quarter Lock (no mid-quarter sub or swap)
         if (state.shiftsPerQuarter === 2 && part === 2 && state.fullQuarterLocks[quarter] && prevShift) {
           benchIds = [...prevShift.benchIds];
           posMap = { ...prevShift.positions };
           isLocked = true;
-        } else if (state.lockedShifts[s]) {
+        }
+        // Case 2: Manually Locked Shift by Coach
+        else if (state.lockedShifts[s]) {
           const lock = state.lockedShifts[s];
           benchIds = lock.benchIds.filter(id => presentPlayers.some(p => p.id === id));
           posMap = { ...(lock.positions || {}) };
           isLocked = true;
-        } else {
+        }
+        // Case 3: Mid-Quarter FWD <-> DEF Swap Mode (2nd half of quarter keeps bench/MID/GK & swaps FWD/DEF)
+        else if (state.shiftsPerQuarter === 2 && part === 2 && state.midQtrPosSwap && prevShift) {
+          benchIds = [...prevShift.benchIds];
+          const fieldPlayers = presentPlayers.filter(p => !benchIds.includes(p.id));
+          posMap = buildSwappedFwdDefPositions(prevShift.positions || {}, fieldPlayers);
+          isMidQtrPosSwapShift = true;
+        }
+        // Case 4: Standard Fair Bench Selection
+        else {
           const candidates = presentPlayers.map((p, idx) => {
             const satPrev = prevShift ? prevShift.benchIds.includes(p.id) : false;
             const totalBench = (p.prior.BENCH || 0) + runningCounts[p.id].BENCH;
@@ -2011,7 +2045,8 @@
           part,
           benchIds,
           positions: posMap,
-          locked: isLocked
+          locked: isLocked,
+          isMidQtrPosSwapShift
         });
       }
 
@@ -2243,7 +2278,10 @@
         customInput.classList.remove('hidden');
       }
 
-      document.getElementById('shiftsPerQtrSelect').value = String(state.shiftsPerQuarter);
+      const modeVal = state.shiftsPerQuarter === 1
+        ? '1'
+        : (state.midQtrPosSwap ? '2_swap' : '2');
+      document.getElementById('shiftsPerQtrSelect').value = modeVal;
 
       document.getElementById('slotCountFWD').textContent = state.slots.FWD;
       document.getElementById('slotCountMID').textContent = state.slots.MID;
@@ -2567,9 +2605,14 @@
             <div class="space-y-2">
               ${visibleShifts.map(shift => {
                 const benchNames = shift.benchIds.map(id => playerMap[id] || '').filter(Boolean);
-                const shiftLabel = isFullQtr
-                  ? `Full Quarter (${qtrDurLabel} • 1.0 Qtr)`
-                  : (shift.part === 1 ? `1st ${shiftDurLabel} (0.5 Qtr)` : `2nd ${shiftDurLabel} (0.5 Qtr)`);
+                let shiftLabel = '';
+                if (isFullQtr) {
+                  shiftLabel = `Full Quarter (${qtrDurLabel} • 1.0 Qtr)`;
+                } else if (shift.part === 2 && shift.isMidQtrPosSwapShift) {
+                  shiftLabel = `2nd ${shiftDurLabel} • 🔄 FWD ⇄ DEF Swap`;
+                } else {
+                  shiftLabel = shift.part === 1 ? `1st ${shiftDurLabel} (0.5 Qtr)` : `2nd ${shiftDurLabel} (0.5 Qtr)`;
+                }
 
                 const isShiftActive = isActiveQuarter && (
                   isFullQtr || (activeShift && activeShift.index === shift.index)
@@ -2913,7 +2956,6 @@
         p.prior.gamesPlayed = (p.prior.gamesPlayed || 0) + 1;
       });
 
-      // Reset per-game RSVP flags for next week
       state.players.forEach(p => {
         p.rsvp = null;
         p.present = true;
@@ -3359,6 +3401,7 @@
           : (s.part === 1 ? `Out ${qOrd}` : `2nd part of ${qOrd}`);
 
         if (state.smsStyle === 'compact' || !state.trackPositions) {
+          if (s.part === 2 && s.isMidQtrPosSwapShift) return; // Same bench in swap mode
           messages.push(`${prefix} ${benchStr}`);
         } else {
           const groups = { FWD: [], MID: [], DEF: [], GK: [] };
@@ -3428,7 +3471,7 @@
     }
 
     // =========================================================================
-    // ON-THE-FLY SHIFT & POSITION MODAL ACTIONS
+    // ON-THE-FLY SHIFT & POSITION MODAL ACTIONS (INCLUDES 🎲 RANDOM GK)
     // =========================================================================
     function openEditModal(shiftIdx) {
       if (!canEditGame()) return;
@@ -3449,6 +3492,12 @@
         : (shift.part === 1 ? `1st ${shiftDurLabel}` : `2nd ${shiftDurLabel}`);
 
       document.getElementById('modalTitle').textContent = `Edit Quarter ${shift.quarter} • ${partLabel}`;
+
+      const randGkBtn = document.getElementById('modalRandomGkBtn');
+      if (randGkBtn) {
+        randGkBtn.classList.toggle('hidden', !(state.trackPositions && (state.slots.GK || 0) > 0));
+      }
+
       document.getElementById('editModal').classList.remove('hidden');
       renderModalPlayers();
     }
@@ -3456,6 +3505,24 @@
     function closeEditModal() {
       editingShiftIdx = null;
       document.getElementById('editModal').classList.add('hidden');
+    }
+
+    function rollRandomModalGoalie() {
+      const onFieldPlayers = state.players.filter(p => p.present && !modalDraft.benchIds.includes(p.id));
+      if (onFieldPlayers.length === 0) return;
+
+      const currentGkIds = onFieldPlayers.filter(p => modalDraft.positions[p.id] === 'GK').map(p => p.id);
+      const candidates = onFieldPlayers.filter(p => !currentGkIds.includes(p.id));
+      const pool = candidates.length > 0 ? candidates : onFieldPlayers;
+      const winner = pool[Math.floor(Math.random() * pool.length)];
+
+      // Swap winner into GK and move previous GK into winner's old position
+      const winnerOldPos = modalDraft.positions[winner.id] || 'MID';
+      currentGkIds.forEach(oldId => {
+        modalDraft.positions[oldId] = winnerOldPos === 'GK' ? 'DEF' : winnerOldPos;
+      });
+      modalDraft.positions[winner.id] = 'GK';
+      renderModalPlayers();
     }
 
     function renderModalPlayers() {
@@ -3524,10 +3591,17 @@
 
     function saveModalShift() {
       if (!canEditGame() || editingShiftIdx === null) return;
+      const shift = state.computedShifts[editingShiftIdx];
       state.lockedShifts[editingShiftIdx] = {
         benchIds: [...modalDraft.benchIds],
         positions: { ...modalDraft.positions }
       };
+
+      // If in Mid-Quarter Swap Mode and Coach edits Shift 1 of a quarter, unlock Shift 2 so it auto-swaps from the new Shift 1
+      if (state.midQtrPosSwap && shift && shift.part === 1 && !state.lockedShifts[editingShiftIdx + 1]) {
+        delete state.lockedShifts[editingShiftIdx + 1];
+      }
+
       closeEditModal();
       recalculateSchedule();
       renderAll();
@@ -3542,7 +3616,7 @@
     }
 
     // =========================================================================
-    // ROSTER, ATTENDANCE & FORMAT HANDLERS (12.5m & CUSTOM TIME SUPPORT)
+    // ROSTER, ATTENDANCE & FORMAT HANDLERS (12.5m & MID-QTR SWAP SUPPORT)
     // =========================================================================
     function addPlayerFromOnboarding() {
       if (!isHeadCoach()) return;
@@ -3718,7 +3792,9 @@
 
     function handleTimingChange() {
       if (!isHeadCoach()) return;
-      const newShiftsPerQtr = parseInt(document.getElementById('shiftsPerQtrSelect').value, 10) || 2;
+      const rawMode = document.getElementById('shiftsPerQtrSelect').value;
+      const newShiftsPerQtr = rawMode === '1' ? 1 : 2;
+      const newMidQtrPosSwap = rawMode === '2_swap';
       const oldShiftsPerQtr = state.shiftsPerQuarter;
 
       if (oldShiftsPerQtr === 2 && newShiftsPerQtr === 1) {
@@ -3746,9 +3822,14 @@
           }
         }
         state.lockedShifts = preservedLocks;
+      } else if (newMidQtrPosSwap) {
+        // Clear auto-locks on 2nd shifts so they cleanly swap FWD <-> DEF from 1st shifts
+        [1, 3, 5, 7].forEach(idx => { delete state.lockedShifts[idx]; });
+        state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
       }
 
       state.shiftsPerQuarter = newShiftsPerQtr;
+      state.midQtrPosSwap = newMidQtrPosSwap;
       resetTimer(false);
       recalculateSchedule();
       renderAll();
@@ -3966,9 +4047,15 @@
 
       if (!fullQuarterLive) {
         const isFirstHalf = timer.secondsLeft > midSec;
-        badge.textContent = isFirstHalf
-          ? `Q${timer.quarter} • 1st Shift`
-          : `Q${timer.quarter} • 2nd Shift`;
+        if (state.midQtrPosSwap) {
+          badge.textContent = isFirstHalf
+            ? `Q${timer.quarter} • 1st Half`
+            : `Q${timer.quarter} • 2nd Half (FWD⇄DEF Swapped)`;
+        } else {
+          badge.textContent = isFirstHalf
+            ? `Q${timer.quarter} • 1st Shift`
+            : `Q${timer.quarter} • 2nd Shift`;
+        }
 
         syncMidBtn.classList.remove('hidden');
         splitProgress.classList.remove('hidden');
@@ -4080,13 +4167,31 @@
       const prevShift = targetShift.index > 0 ? state.computedShifts[targetShift.index - 1] : null;
       const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
 
+      const banner = document.getElementById('subAlertBanner');
+      const content = document.getElementById('subAlertContent');
+
+      // Special Mid-Quarter Striker <-> Defender Swap Alert
+      if (part === 2 && targetShift.isMidQtrPosSwapShift) {
+        const newFwds = Object.entries(targetShift.positions || {})
+          .filter(([pid, pos]) => !targetShift.benchIds.includes(pid) && pos === 'FWD' && playerMap[pid])
+          .map(([pid]) => playerMap[pid]);
+        const newDefs = Object.entries(targetShift.positions || {})
+          .filter(([pid, pos]) => !targetShift.benchIds.includes(pid) && pos === 'DEF' && playerMap[pid])
+          .map(([pid]) => playerMap[pid]);
+
+        content.innerHTML = `
+          <div class="text-emerald-300 font-bold">🔄 Mid-Quarter Striker / Defender Swap! (Bench, MID & GK stay)</div>
+          <div><strong>⚔️ Move to Striker (FWD):</strong> ${newFwds.length ? newFwds.map(escapeHtml).join(', ') : 'None'}</div>
+          <div><strong>🛡️ Move to Defense (DEF):</strong> ${newDefs.length ? newDefs.map(escapeHtml).join(', ') : 'None'}</div>
+        `;
+        banner.classList.remove('hidden');
+        return;
+      }
+
       const goingOut = targetShift.benchIds.map(id => playerMap[id]).filter(Boolean);
       const comingIn = prevShift
         ? prevShift.benchIds.filter(id => !targetShift.benchIds.includes(id)).map(id => playerMap[id])
         : [];
-
-      const banner = document.getElementById('subAlertBanner');
-      const content = document.getElementById('subAlertContent');
 
       let html = `
         <div><strong>🏃 Coming ON Field:</strong> ${comingIn.length ? comingIn.join(', ') : 'Starting Lineup'}</div>
@@ -4201,6 +4306,7 @@
       toggleStatsSort,
       openEditModal,
       closeEditModal,
+      rollRandomModalGoalie,
       toggleModalBench,
       setModalPlayerPos,
       saveModalShift,
