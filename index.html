@@ -1077,6 +1077,9 @@
       '11v11_433':{ label: '11v11 (3-3-4+GK)',slots: { FWD: 3, MID: 3, DEF: 4, GK: 1 } }
     };
 
+    // Strictly local UI tab state so cloud updates or reloads never hijack the active tab
+    let currentActiveTab = 'game';
+
     function createBlankTeam(name = 'My Team') {
       return {
         id: 'team_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
@@ -1085,7 +1088,6 @@
         ownerEmail: null,
         v5QuarterScale: true,
         updatedAt: Date.now(),
-        activeTab: 'game',
         teamName: name,
         trackPositions: true,
         smsStyle: 'positions',
@@ -1296,7 +1298,7 @@
             t.ownerUid = user.uid;
             t.ownerEmail = user.email || '';
             const ref = fbFirestoreMod.doc(fbDb, 'sideline_pro_teams', t.id);
-            await fbFirestoreMod.setDoc(ref, JSON.parse(JSON.stringify({ ...t, updatedAt: Date.now() })), { merge: true });
+            await fbFirestoreMod.setDoc(ref, JSON.parse(JSON.stringify({ ...t, activeTab: 'game', updatedAt: Date.now() })), { merge: true });
           }
         }
 
@@ -1617,6 +1619,9 @@
       const base = createBlankTeam(rawTeam.teamName || 'My Team');
       const merged = { ...base, ...rawTeam };
 
+      // Never allow cloud or stored objects to force activeTab to 'stats'
+      delete merged.activeTab;
+
       merged.quarterMins = parseFloat(rawTeam.quarterMins) || 8;
       merged.editPin = String(rawTeam.editPin || base.editPin);
       merged.rosterSort = rawTeam.rosterSort || 'order';
@@ -1732,6 +1737,7 @@
       appStore.teams.push(newTeam);
       appStore.activeTeamId = newTeam.id;
       state = newTeam;
+      currentActiveTab = 'game';
       resetTimer(false);
       recalculateSchedule();
       renderAll();
@@ -1762,6 +1768,7 @@
         editPin: state.editPin,
         ownerUid: state.ownerUid || null,
         ownerEmail: state.ownerEmail || null,
+        activeTab: 'game', // Clean up any legacy 'stats' value stored in Firestore
         v5QuarterScale: true,
         teamName: state.teamName,
         trackPositions: state.trackPositions,
@@ -1843,6 +1850,7 @@
 
     function loadState() {
       initPwaSupport();
+      currentActiveTab = 'game'; // Always open on Live Game & Subs
 
       try {
         const rawMulti = localStorage.getItem(MULTI_TEAM_STORAGE_KEY);
@@ -1960,7 +1968,6 @@
           const candidates = presentPlayers.map((p, idx) => {
             const satPrev = prevShift ? prevShift.benchIds.includes(p.id) : false;
             const totalBench = (p.prior.BENCH || 0) + runningCounts[p.id].BENCH;
-            // If parent marked "Running Late" (rsvp === 'late'), prioritize sitting them in Q1 Shift 1
             const isLateFirstShift = (s === 0 && p.rsvp === 'late');
             return {
               id: p.id,
@@ -2164,14 +2171,13 @@
     }
 
     function switchMainTab(tab) {
-      state.activeTab = tab;
-      saveState(false);
+      currentActiveTab = tab;
       renderTabsAndOnboarding();
       if (tab === 'stats') renderStatsAndHistoryTab();
     }
 
     function renderTabsAndOnboarding() {
-      const isGame = state.activeTab === 'game';
+      const isGame = currentActiveTab === 'game';
       document.getElementById('viewGame').classList.toggle('hidden', !isGame);
       document.getElementById('viewStats').classList.toggle('hidden', isGame);
 
@@ -2225,7 +2231,6 @@
 
       document.getElementById('formationPresetSelect').value = state.formationKey;
 
-      // Sync Quarter Mins Select + Custom Input
       const qSelect = document.getElementById('quarterMinsSelect');
       const customInput = document.getElementById('customQuarterMinsInput');
       const isPreset = PRESET_QUARTER_VALUES.includes(Number(state.quarterMins));
