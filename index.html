@@ -37,7 +37,10 @@
 </head>
 <body class="min-h-screen pb-24 selection:bg-emerald-500 selection:text-white">
 
-  <!-- Top Header with Multi-Team Switcher -->
+  <!-- Role Mode Banner (Shown in Assistant Coach or Parent Viewer Mode) -->
+  <div id="roleBanner" class="hidden px-4 py-2 text-xs font-bold text-center border-b"></div>
+
+  <!-- Top Header -->
   <header class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-3.5 py-3">
     <div class="max-w-2xl mx-auto flex flex-col gap-2.5">
       <div class="flex items-center justify-between gap-2">
@@ -47,13 +50,17 @@
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5">
+              <!-- Head Coach Multi-Team Dropdown -->
               <select id="headerTeamSelect" onchange="handleTeamSelectChange(this.value)"
                 class="bg-slate-800/90 hover:bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 font-extrabold text-sm text-white truncate max-w-[190px] sm:max-w-xs focus:outline-none focus:border-emerald-500 cursor-pointer">
               </select>
+              <!-- Static Team Title for Assistant / Parent Viewer Modes -->
+              <h1 id="headerStaticTeamName" class="hidden font-extrabold text-base text-white truncate"></h1>
             </div>
             <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-              <span class="inline-flex items-center gap-1 text-emerald-400 font-medium">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Auto-Saved
+              <span id="liveSyncIndicator" class="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                <span id="liveSyncDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span id="liveSyncText">Local Saved</span>
               </span>
               <span>•</span>
               <span id="formatSummaryLabel" class="truncate">5v5 (2-1-2) • 8m Qtrs</span>
@@ -67,16 +74,20 @@
             title="Install App">
             <span>📲 Install</span>
           </button>
-          <button onclick="shareAppStateLink()" id="shareLinkBtn"
+
+          <!-- Invite Parents / Assistant Coach Button -->
+          <button onclick="openInviteModal()" id="inviteBtn"
             class="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold transition flex items-center gap-1"
-            title="Share a link containing this team's roster, rotation, and stats">
-            <span>🔗 Share</span>
+            title="Invite Parents (View-Only) or Assistant Coaches (Live Edit)">
+            <span>📡 Invite / Live</span>
           </button>
+
           <button onclick="togglePositionMode()" id="posToggleBtn"
             class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1">
             <span>📍 Pos: ON</span>
           </button>
-          <button onclick="toggleDrawer('settingsDrawer')"
+
+          <button onclick="toggleDrawer('settingsDrawer')" id="setupGearBtn"
             class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold"
             title="Roster & Format Setup">
             ⚙️
@@ -100,19 +111,8 @@
 
   <main class="max-w-2xl mx-auto px-3 pt-3 space-y-4">
 
-    <!-- Shared Link Import Banner -->
-    <div id="sharedImportBanner" class="hidden bg-indigo-950/90 border border-indigo-400/50 rounded-2xl p-3.5 flex items-center justify-between gap-2 text-xs text-indigo-100 shadow-lg">
-      <div>
-        <strong class="text-white">📥 Shared Team Data Loaded!</strong>
-        <span id="sharedImportSubtext" class="block text-indigo-200 mt-0.5">Team roster, rotation, and stats were imported and saved to your team list.</span>
-      </div>
-      <button onclick="document.getElementById('sharedImportBanner').classList.add('hidden')" class="px-2.5 py-1 rounded-lg bg-indigo-800/80 text-indigo-200 hover:text-white font-semibold shrink-0">
-        Got it
-      </button>
-    </div>
-
     <!-- =================================================================== -->
-    <!-- INITIAL BLANK ROSTER ONBOARDING PROMPT (Shown when roster is empty) -->
+    <!-- INITIAL BLANK ROSTER ONBOARDING PROMPT (Head Coach Only)            -->
     <!-- =================================================================== -->
     <section id="onboardingCard" class="hidden bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/40 border-2 border-emerald-500/40 rounded-2xl p-5 space-y-4 shadow-2xl">
       <div class="flex items-start justify-between gap-3">
@@ -151,7 +151,6 @@
         </div>
       </div>
 
-      <!-- Quick Player Adder -->
       <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-3">
         <label class="block text-xs font-bold text-emerald-400">Add Players to Roster</label>
         <div class="flex gap-2">
@@ -170,7 +169,7 @@
     </section>
 
     <!-- =================================================================== -->
-    <!-- COLLAPSIBLE SETUP & ROSTER DRAWER                                   -->
+    <!-- COLLAPSIBLE SETUP & ROSTER DRAWER (Head Coach Only)                 -->
     <!-- =================================================================== -->
     <section id="settingsDrawer" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4 shadow-xl">
       <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
@@ -329,7 +328,7 @@
           <div class="bg-slate-950/90 border border-emerald-500/30 rounded-2xl p-3 text-center space-y-2">
             <div id="scoreTeamLabel" class="text-xs font-bold text-emerald-300 truncate">My Team</div>
             <div id="ourScoreDisplay" class="mono text-4xl font-extrabold text-white">0</div>
-            <button onclick="openGoalModal()"
+            <button onclick="openGoalModal()" id="addOurGoalBtn"
               class="w-full py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-emerald-500/20 transition active:scale-95">
               + Goal ⚽ (Log Scorer)
             </button>
@@ -339,7 +338,7 @@
           <div class="bg-slate-950/90 border border-slate-800 rounded-2xl p-3 text-center space-y-2">
             <div id="scoreOpponentLabel" class="text-xs font-bold text-slate-400 truncate">Opponent</div>
             <div id="oppScoreDisplay" class="mono text-4xl font-extrabold text-slate-200">0</div>
-            <div class="flex items-center justify-center gap-2">
+            <div id="oppScoreControls" class="flex items-center justify-center gap-2">
               <button onclick="adjustOpponentScore(-1)"
                 class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs border border-slate-700">
                 -1
@@ -379,12 +378,12 @@
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 my-2">
           <div class="flex items-baseline gap-3">
             <div id="timerDisplay" class="mono text-5xl font-extrabold tracking-tight text-white">08:00</div>
-            <button onclick="playWhistle(1)" class="text-xs text-slate-400 hover:text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700">
+            <button onclick="playWhistle(1)" id="whistleBtn" class="text-xs text-slate-400 hover:text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700">
               📣 Whistle
             </button>
           </div>
 
-          <div class="flex flex-wrap items-center gap-1.5">
+          <div id="timerActionButtons" class="flex flex-wrap items-center gap-1.5">
             <button onclick="toggleTimer()" id="timerStartBtn"
               class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm transition shadow-lg shadow-emerald-500/20">
               ▶ Start
@@ -432,7 +431,7 @@
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
           <div>
-            <h2 class="font-bold text-sm text-white">📋 Roll Call (Tap Player to Toggle Present)</h2>
+            <h2 id="rollCallHeaderTitle" class="font-bold text-sm text-white">📋 Roll Call (Tap Player to Toggle Present)</h2>
             <p id="attendanceSubtext" class="text-xs text-slate-400">0 present</p>
           </div>
           <div class="flex flex-wrap items-center gap-1.5">
@@ -441,10 +440,10 @@
               <button onclick="setRosterSort('name')" id="sortBtnName" class="px-2 py-1 rounded-md font-semibold">Name</button>
               <button onclick="setRosterSort('number')" id="sortBtnNumber" class="px-2 py-1 rounded-md font-semibold">#</button>
             </div>
-            <button onclick="setAllAttendance(true)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700">
+            <button onclick="setAllAttendance(true)" id="selectAllAttendanceBtn" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700">
               Select All
             </button>
-            <button onclick="rotateStarterOrder()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-emerald-400 border border-slate-700">
+            <button onclick="rotateStarterOrder()" id="rotateOrderBtn" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-emerald-400 border border-slate-700">
               🔀 Rotate Order
             </button>
           </div>
@@ -456,7 +455,7 @@
       <section class="space-y-3">
         <div class="flex items-center justify-between px-1">
           <h2 class="font-bold text-sm text-white">🔄 Game Rotation & Field Positions</h2>
-          <span class="text-xs text-slate-400">Active shift highlighted • Tap any shift to edit</span>
+          <span id="scheduleSubHint" class="text-xs text-slate-400">Active shift highlighted • Tap any shift to edit</span>
         </div>
         <div id="scheduleGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
       </section>
@@ -490,8 +489,8 @@
         </div>
       </section>
 
-      <!-- 1-Tap SMS / RCS Text Output -->
-      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
+      <!-- 1-Tap SMS / RCS Text Output (Hidden in Parent Viewer Mode) -->
+      <section id="smsSectionCard" class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 class="font-bold text-sm text-white">💬 Text Schedule (SMS / RCS Ready)</h2>
@@ -515,8 +514,8 @@
         <div id="smsBubblesContainer" class="space-y-2 bg-slate-950/70 p-3 rounded-xl border border-slate-800"></div>
       </section>
 
-      <!-- Complete & Archive Game Action -->
-      <section class="bg-gradient-to-r from-indigo-950/80 to-slate-900 border border-indigo-500/40 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+      <!-- Complete & Archive Game Action (Hidden in Parent Viewer Mode) -->
+      <section id="completeGameSectionCard" class="bg-gradient-to-r from-indigo-950/80 to-slate-900 border border-indigo-500/40 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
         <div>
           <h3 class="font-bold text-sm text-white">🏁 Finished Today's Match?</h3>
           <p class="text-xs text-slate-300">Save final score, goals, assists, and quarter counts to your Season History & Stats.</p>
@@ -560,7 +559,7 @@
         </div>
       </section>
 
-      <!-- Player Season Leaderboard (Sortable Columns) -->
+      <!-- Player Season Leaderboard -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
         <div class="flex items-center justify-between mb-3">
           <div>
@@ -587,12 +586,12 @@
         </div>
       </section>
 
-      <!-- Past Game History Viewer (Clickable to View & Edit) -->
+      <!-- Past Game History Viewer -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
         <div class="flex items-center justify-between">
           <div>
             <h2 class="font-bold text-sm text-white">📜 Completed Game History</h2>
-            <p class="text-xs text-slate-400">Tap any match card to view full details or edit scores, goals, assists & player shifts</p>
+            <p id="historySubHint" class="text-xs text-slate-400">Tap any match card to view full details or edit scores, goals, assists & player shifts</p>
           </div>
         </div>
         <div id="gameHistoryList" class="space-y-2.5"></div>
@@ -646,14 +645,77 @@
   </main>
 
   <!-- ===================================================================== -->
+  <!-- INVITE PARENTS (VIEWER) & ASSISTANT COACH (LIVE EDIT) MODAL           -->
+  <!-- ===================================================================== -->
+  <div id="inviteModal" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="font-extrabold text-base text-white">📡 Live Sharing & Role Links</h3>
+          <p class="text-xs text-slate-400">Text parents a read-only viewer link or invite an assistant coach to help manage the game.</p>
+        </div>
+        <button onclick="closeInviteModal()" class="text-slate-400 hover:text-white text-sm px-2 py-1">✕</button>
+      </div>
+
+      <!-- Cloud Status Banner -->
+      <div id="inviteCloudNotice" class="p-3 rounded-xl border text-xs"></div>
+
+      <!-- 1. Parent Viewer Mode Invite Card -->
+      <div class="bg-slate-950 border border-sky-500/30 rounded-2xl p-4 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-sky-500/20 text-sky-300 border border-sky-500/40">
+            👀 Parent / Family Viewer Mode
+          </span>
+          <span class="text-[11px] text-slate-400">Read-Only Live View</span>
+        </div>
+        <p class="text-xs text-slate-300">
+          Parents can watch the live score, goal scorers, real-time countdown clock, who is currently on the field, and upcoming substitutions—<strong>without being able to edit or change anything</strong>.
+        </p>
+        <div class="flex gap-2 pt-1">
+          <button onclick="shareRoleLink('viewer')" id="shareViewerBtn"
+            class="flex-1 py-2.5 px-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-extrabold text-xs shadow">
+            📲 Text / Copy Parent Viewer Link
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. Assistant Coach Mode Invite Card -->
+      <div id="assistantInviteCard" class="bg-slate-950 border border-amber-500/30 rounded-2xl p-4 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+            🧢 Assistant Coach Mode
+          </span>
+          <span class="text-[11px] text-slate-400">Live Sideline Co-Editor</span>
+        </div>
+        <p class="text-xs text-slate-300">
+          Allows your assistant coach (or sideline scorekeeper) to <strong>keep score, log goals/assists, run the timer, mark players in/out, and update field positions</strong> in real time.
+        </p>
+        <div class="flex gap-2 pt-1">
+          <button onclick="shareRoleLink('assistant')" id="shareAssistantBtn"
+            class="flex-1 py-2.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs shadow">
+            🧢 Text / Copy Assistant Coach Link
+          </button>
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-2 border-t border-slate-800">
+        <button onclick="closeInviteModal()"
+          class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
   <!-- PAST GAME DETAILS & FULL EDITOR MODAL                                 -->
   <!-- ===================================================================== -->
   <div id="gameDetailModal" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
     <div class="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
         <div>
-          <h3 class="font-extrabold text-base text-white">📋 Match Details & Editor</h3>
-          <p class="text-xs text-slate-400">Edit score, goals, assists, or player quarter counts. Saving updates season stats automatically.</p>
+          <h3 id="gameDetailModalTitle" class="font-extrabold text-base text-white">📋 Match Details & Editor</h3>
+          <p id="gameDetailModalSubtitle" class="text-xs text-slate-400">Edit score, goals, assists, or player quarter counts. Saving updates season stats automatically.</p>
         </div>
         <button onclick="closeGameDetailModal()" class="text-slate-400 hover:text-white text-sm px-2 py-1">✕</button>
       </div>
@@ -682,19 +744,19 @@
         <div class="text-center space-y-1">
           <div class="text-xs font-bold text-emerald-400">Our Score</div>
           <div class="flex items-center justify-center gap-2">
-            <button onclick="adjustHistDraftScore('our', -1)" class="w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">-</button>
+            <button onclick="adjustHistDraftScore('our', -1)" class="hist-edit-btn w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">-</button>
             <input id="histEditOurScore" type="number" min="0"
               class="w-14 bg-slate-900 border border-slate-700 rounded-lg py-1 text-center mono font-extrabold text-lg text-white" />
-            <button onclick="adjustHistDraftScore('our', 1)" class="w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">+</button>
+            <button onclick="adjustHistDraftScore('our', 1)" class="hist-edit-btn w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">+</button>
           </div>
         </div>
         <div class="text-center space-y-1">
           <div class="text-xs font-bold text-slate-400">Opponent Score</div>
           <div class="flex items-center justify-center gap-2">
-            <button onclick="adjustHistDraftScore('opp', -1)" class="w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">-</button>
+            <button onclick="adjustHistDraftScore('opp', -1)" class="hist-edit-btn w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">-</button>
             <input id="histEditOppScore" type="number" min="0"
               class="w-14 bg-slate-900 border border-slate-700 rounded-lg py-1 text-center mono font-extrabold text-lg text-white" />
-            <button onclick="adjustHistDraftScore('opp', 1)" class="w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">+</button>
+            <button onclick="adjustHistDraftScore('opp', 1)" class="hist-edit-btn w-7 h-7 rounded-lg bg-slate-800 font-bold text-sm">+</button>
           </div>
         </div>
       </div>
@@ -703,7 +765,7 @@
       <div class="space-y-2">
         <div class="flex items-center justify-between">
           <label class="text-xs font-bold uppercase tracking-wider text-emerald-400">⚽ Goals & Assists Log</label>
-          <button onclick="addHistDraftGoal()"
+          <button onclick="addHistDraftGoal()" id="histAddGoalBtn"
             class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
             + Add Goal
           </button>
@@ -720,23 +782,23 @@
         <div id="histEditPlayersList" class="space-y-1.5 max-h-56 overflow-y-auto pr-1"></div>
       </div>
 
-      <!-- Rotation Snapshot Viewer (If saved with game) -->
+      <!-- Rotation Snapshot Viewer -->
       <div id="histRotationSnapshotSection" class="hidden space-y-1.5 pt-2 border-t border-slate-800">
         <label class="text-xs font-bold uppercase tracking-wider text-slate-400">🔄 Saved Rotation Snapshot</label>
         <div id="histRotationSnapshotList" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]"></div>
       </div>
 
       <div class="flex items-center justify-between gap-2 pt-3 border-t border-slate-800">
-        <button onclick="deleteCurrentModalHistoryGame()"
+        <button onclick="deleteCurrentModalHistoryGame()" id="histDeleteGameBtn"
           class="px-3 py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-xs font-semibold border border-rose-500/30">
           🗑️ Delete Game
         </button>
-        <div class="flex gap-2">
+        <div class="flex gap-2 ml-auto">
           <button onclick="closeGameDetailModal()"
             class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
-            Cancel
+            Close
           </button>
-          <button onclick="saveGameDetailEdits()"
+          <button onclick="saveGameDetailEdits()" id="histSaveGameBtn"
             class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow-lg">
             💾 Save Game Changes
           </button>
@@ -820,7 +882,51 @@
     </div>
   </div>
 
-  <script>
+  <script type="module">
+    // =========================================================================
+    // 1. FIREBASE CONFIGURATION (sideline-assistant-pro)
+    // =========================================================================
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyCdHYqOhYl_i4zF6DFWEdR_RmxBGytOvys",
+      authDomain: "sideline-assistant-pro.firebaseapp.com",
+      projectId: "sideline-assistant-pro",
+      storageBucket: "sideline-assistant-pro.firebasestorage.app",
+      messagingSenderId: "93614361874",
+      appId: "1:93614361874:web:8464be9e7bfdfe345ab7cb"
+    };
+
+    const isFirebaseConfigured = Boolean(
+      FIREBASE_CONFIG &&
+      FIREBASE_CONFIG.apiKey &&
+      !FIREBASE_CONFIG.apiKey.includes('PASTE_YOUR_')
+    );
+
+    // =========================================================================
+    // ROLE DETECTION (COACH vs ASSISTANT vs VIEWER)
+    // =========================================================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const sharedTeamIdParam = urlParams.get('team');
+    const urlRoleParam = (urlParams.get('role') || '').toLowerCase();
+    const urlPinParam = urlParams.get('pin') || '';
+
+    // 'coach' (default full admin) | 'assistant' (co-editor) | 'viewer' (parent read-only)
+    let appRole = 'coach';
+    if (sharedTeamIdParam) {
+      if (urlRoleParam === 'assistant' && urlPinParam) {
+        appRole = 'assistant';
+      } else if (urlRoleParam === 'viewer') {
+        appRole = 'viewer';
+      }
+    }
+
+    function canEditGame() {
+      return appRole === 'coach' || appRole === 'assistant';
+    }
+
+    function isHeadCoach() {
+      return appRole === 'coach';
+    }
+
     // =========================================================================
     // MULTI-TEAM STORAGE & STATE ARCHITECTURE (100% BACKWARDS COMPATIBLE)
     // =========================================================================
@@ -842,7 +948,9 @@
     function createBlankTeam(name = 'My Team') {
       return {
         id: 'team_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        v5QuarterScale: true, // Marks 1.0 = Full Qtr, 0.5 = Half-Qtr Shift
+        editPin: String(Math.floor(1000 + Math.random() * 9000)),
+        v5QuarterScale: true,
+        updatedAt: Date.now(),
         activeTab: 'game',
         teamName: name,
         trackPositions: true,
@@ -851,7 +959,7 @@
         slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 },
         quarterMins: 8,
         shiftsPerQuarter: 2,
-        rosterSort: 'order', // 'order' | 'name' | 'number'
+        rosterSort: 'order',
         balanceSort: { col: 'order', dir: 'asc' },
         statsSort: { col: 'pts', dir: 'desc' },
         players: [],
@@ -863,6 +971,13 @@
           ourScore: 0,
           oppScore: 0,
           goals: []
+        },
+        timerSync: {
+          quarter: 1,
+          running: false,
+          endTimeMs: null,
+          remainingSec: 480,
+          midAlertFired: false
         },
         gameHistory: []
       };
@@ -886,13 +1001,123 @@
     let editingShiftIdx = null;
     let modalDraft = { benchIds: [], positions: {} };
     let goalDraft = { scorerId: null, assistId: null };
-
-    // Historical Game Editor Temp State
     let editingHistoryGameId = null;
     let histDraft = null;
-
-    // PWA Install Prompt Reference
     let deferredInstallPrompt = null;
+
+    // Firebase Runtime Handles
+    let fbDb = null;
+    let fbSetDoc = null;
+    let fbDoc = null;
+    let fbOnSnapshot = null;
+    let activeUnsubscribe = null;
+    let isReceivingCloudSnapshot = false;
+
+    // =========================================================================
+    // FIREBASE REAL-TIME SYNC ENGINE
+    // =========================================================================
+    function setSyncBadge(mode, text) {
+      const dot = document.getElementById('liveSyncDot');
+      const label = document.getElementById('liveSyncText');
+      if (!dot || !label) return;
+
+      if (mode === 'live') {
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse';
+        label.textContent = text || 'Live Cloud Sync';
+        label.className = 'text-sky-300 font-semibold';
+      } else if (mode === 'error') {
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        label.textContent = text || 'Offline / Local';
+        label.className = 'text-rose-300 font-semibold';
+      } else {
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        label.textContent = text || 'Local Saved';
+        label.className = 'text-emerald-400 font-medium';
+      }
+    }
+
+    async function initFirebaseConnection() {
+      if (!isFirebaseConfigured) {
+        setSyncBadge('local', 'Local Saved');
+        return;
+      }
+
+      try {
+        setSyncBadge('live', 'Connecting...');
+        const [{ initializeApp, getApps }, { getFirestore, doc, onSnapshot, setDoc }] = await Promise.all([
+          import('https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js'),
+          import('https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js')
+        ]);
+
+        const app = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+        fbDb = getFirestore(app);
+        fbSetDoc = setDoc;
+        fbDoc = doc;
+        fbOnSnapshot = onSnapshot;
+
+        subscribeToActiveTeamCloud();
+      } catch (err) {
+        console.warn('Firebase connection error:', err);
+        setSyncBadge('error', 'Local Fallback');
+      }
+    }
+
+    function subscribeToActiveTeamCloud() {
+      if (!fbDb || !fbOnSnapshot || !fbDoc || !state.id) return;
+      if (activeUnsubscribe) activeUnsubscribe();
+
+      const teamRef = fbDoc(fbDb, 'sideline_pro_teams', state.id);
+
+      activeUnsubscribe = fbOnSnapshot(teamRef, (snap) => {
+        if (snap.exists()) {
+          const cloudData = snap.data();
+
+          // If Assistant Coach opened link, verify PIN matches
+          if (appRole === 'assistant' && cloudData.editPin && urlPinParam !== String(cloudData.editPin)) {
+            appRole = 'viewer'; // Downgrade to read-only viewer if PIN is invalid
+          }
+
+          isReceivingCloudSnapshot = true;
+          const mergedTeam = normalizeTeamObject(cloudData);
+          const idx = appStore.teams.findIndex(t => t.id === mergedTeam.id);
+          if (idx >= 0) {
+            appStore.teams[idx] = mergedTeam;
+          } else {
+            appStore.teams.push(mergedTeam);
+          }
+          appStore.activeTeamId = mergedTeam.id;
+          state = mergedTeam;
+
+          applyCloudTimerState();
+          recalculateSchedule(false);
+          renderAll();
+          isReceivingCloudSnapshot = false;
+          setSyncBadge('live', 'Live Synced');
+        } else if (canEditGame() && state.players.length > 0) {
+          pushActiveTeamToCloud();
+          setSyncBadge('live', 'Live Synced');
+        } else {
+          setSyncBadge('live', 'Live Ready');
+        }
+      }, (err) => {
+        console.warn('Firestore snapshot error:', err);
+        setSyncBadge('error', 'Sync Paused');
+      });
+    }
+
+    async function pushActiveTeamToCloud() {
+      if (!fbDb || !fbSetDoc || !fbDoc || isReceivingCloudSnapshot || !canEditGame()) return;
+      try {
+        const teamRef = fbDoc(fbDb, 'sideline_pro_teams', state.id);
+        const payload = JSON.parse(JSON.stringify({
+          ...getSerializablePayload(),
+          updatedAt: Date.now()
+        }));
+        await fbSetDoc(teamRef, payload, { merge: true });
+      } catch (err) {
+        console.warn('Failed to push update to Firestore:', err);
+      }
+    }
 
     // =========================================================================
     // PWA SERVICE WORKER & ANDROID WEBAPK INSTALL SUPPORT
@@ -981,6 +1206,7 @@
       const base = createBlankTeam(rawTeam.teamName || 'My Team');
       const merged = { ...base, ...rawTeam };
 
+      merged.editPin = String(rawTeam.editPin || base.editPin);
       merged.rosterSort = rawTeam.rosterSort || 'order';
       merged.balanceSort = rawTeam.balanceSort || { col: 'order', dir: 'asc' };
       merged.statsSort = rawTeam.statsSort || { col: 'pts', dir: 'desc' };
@@ -994,8 +1220,6 @@
           ...(p.prior || {})
         };
 
-        // If migrating from v3/v4 where 2 shifts/qtr added 1.0 per half-quarter shift (8 per game),
-        // convert existing shift counts to quarter units (0.5 per half-quarter shift = 4.0 per game).
         if (needsV5ScaleMigration) {
           const totalShiftSum = (prior.BENCH || 0) + (prior.FWD || 0) + (prior.MID || 0) + (prior.DEF || 0) + (prior.GK || 0);
           if (totalShiftSum > 0) {
@@ -1019,6 +1243,14 @@
         oppScore: 0,
         goals: [],
         ...(rawTeam.currentMatch || {})
+      };
+      merged.timerSync = {
+        quarter: 1,
+        running: false,
+        endTimeMs: null,
+        remainingSec: (merged.quarterMins || 8) * 60,
+        midAlertFired: false,
+        ...(rawTeam.timerSync || {})
       };
       merged.gameHistory = (rawTeam.gameHistory || []).map(g => ({
         ...g,
@@ -1051,6 +1283,7 @@
     }
 
     function handleTeamSelectChange(val) {
+      if (!isHeadCoach()) return;
       if (val === '__ADD_NEW_TEAM__') {
         createNewTeamPrompt();
         return;
@@ -1063,12 +1296,14 @@
       if (!target) return;
       appStore.activeTeamId = target.id;
       state = target;
-      resetTimer();
-      recalculateSchedule();
+      applyCloudTimerState();
+      recalculateSchedule(false);
       renderAll();
+      subscribeToActiveTeamCloud();
     }
 
     function createNewTeamPrompt() {
+      if (!isHeadCoach()) return;
       const defaultName = `Team ${appStore.teams.length + 1}`;
       const entered = prompt('Enter a name for the new team:', defaultName);
       if (entered === null) {
@@ -1080,30 +1315,34 @@
       appStore.teams.push(newTeam);
       appStore.activeTeamId = newTeam.id;
       state = newTeam;
-      resetTimer();
+      resetTimer(false);
       recalculateSchedule();
       renderAll();
+      subscribeToActiveTeamCloud();
     }
 
     function deleteCurrentTeam() {
+      if (!isHeadCoach()) return;
       if (appStore.teams.length <= 1) {
         alert('You must have at least one team. To start fresh, you can remove players or reset counts.');
         return;
       }
-      const confirmDelete = confirm(`Delete "${state.teamName}" and all of its roster and game history?`);
+      const confirmDelete = confirm(`Delete "${state.teamName}" from your device?`);
       if (!confirmDelete) return;
 
       appStore.teams = appStore.teams.filter(t => t.id !== state.id);
       appStore.activeTeamId = appStore.teams[0].id;
       syncActiveTeamPointer();
-      resetTimer();
-      recalculateSchedule();
+      resetTimer(false);
+      recalculateSchedule(false);
       renderAll();
+      subscribeToActiveTeamCloud();
     }
 
     function getSerializablePayload() {
       return {
         id: state.id,
+        editPin: state.editPin,
         v5QuarterScale: true,
         teamName: state.teamName,
         trackPositions: state.trackPositions,
@@ -1117,59 +1356,74 @@
         lockedShifts: state.lockedShifts,
         fullQuarterLocks: state.fullQuarterLocks,
         currentMatch: state.currentMatch,
+        timerSync: state.timerSync,
         gameHistory: state.gameHistory
       };
     }
 
-    function encodeStateToBase64(obj) {
-      const jsonStr = JSON.stringify(obj);
-      return btoa(unescape(encodeURIComponent(jsonStr)))
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
+    // =========================================================================
+    // INVITE MODAL & ROLE LINK SHARING (PARENT VIEWER vs ASSISTANT COACH)
+    // =========================================================================
+    function openInviteModal() {
+      const notice = document.getElementById('inviteCloudNotice');
+      const assistantCard = document.getElementById('assistantInviteCard');
+
+      if (assistantCard) {
+        assistantCard.style.display = canEditGame() ? '' : 'none';
+      }
+
+      if (isFirebaseConfigured) {
+        notice.className = 'p-3 rounded-xl border bg-emerald-500/10 border-emerald-500/30 text-emerald-200 text-xs';
+        notice.innerHTML = `<strong>🟢 Live Cloud Sharing Active:</strong> Any parent or assistant coach who opens their link below will see real-time updates for <strong>${escapeHtml(state.teamName)}</strong>.`;
+      } else {
+        notice.className = 'p-3 rounded-xl border bg-amber-500/15 border-amber-500/40 text-amber-200 text-xs';
+        notice.innerHTML = `<strong>⚠️ Firebase Not Connected Yet:</strong> Paste your <code>FIREBASE_CONFIG</code> keys in <code>index.html</code> to enable live real-time syncing across phones.`;
+      }
+
+      document.getElementById('inviteModal').classList.remove('hidden');
     }
 
-    function decodeStateFromBase64(b64) {
-      let norm = b64.replace(/-/g, '+').replace(/_/g, '/');
-      while (norm.length % 4) norm += '=';
-      const jsonStr = decodeURIComponent(escape(atob(norm)));
-      return JSON.parse(jsonStr);
+    function closeInviteModal() {
+      document.getElementById('inviteModal').classList.add('hidden');
     }
 
-    async function shareAppStateLink() {
-      const payload = getSerializablePayload();
-      const encoded = encodeStateToBase64(payload);
+    async function shareRoleLink(targetRole) {
+      await pushActiveTeamToCloud();
+
       const baseUrl = window.location.origin + window.location.pathname;
-      const shareUrl = `${baseUrl}#s=${encoded}`;
+      let roleUrl = `${baseUrl}?team=${encodeURIComponent(state.id)}&role=viewer`;
+      let shareTitle = `${state.teamName} — Live Game & Sub Tracker (Parent View)`;
+      let shareText = `Watch ${state.teamName}'s live score, clock, and player rotations here:`;
+      let btnId = 'shareViewerBtn';
 
-      const btn = document.getElementById('shareLinkBtn');
+      if (targetRole === 'assistant') {
+        roleUrl = `${baseUrl}?team=${encodeURIComponent(state.id)}&role=assistant&pin=${encodeURIComponent(state.editPin)}`;
+        shareTitle = `${state.teamName} — Assistant Coach Live Editor`;
+        shareText = `Co-manage ${state.teamName}'s live score, timer, and substitutions here:`;
+        btnId = 'shareAssistantBtn';
+      }
+
+      const btn = document.getElementById(btnId);
       const origHtml = btn.innerHTML;
 
       if (navigator.share) {
         try {
-          await navigator.share({
-            title: `${state.teamName} - Sideline Pro`,
-            text: `Open our live ${state.teamName} rotation, roster, and season stats:`,
-            url: shareUrl
-          });
+          await navigator.share({ title: shareTitle, text: shareText, url: roleUrl });
           return;
-        } catch (err) {
-          // Fall back to clipboard copy
-        }
+        } catch (err) {}
       }
 
       try {
-        await navigator.clipboard.writeText(shareUrl);
-        btn.innerHTML = '<span>✅ Copied!</span>';
+        await navigator.clipboard.writeText(roleUrl);
+        btn.innerHTML = '✅ Link Copied to Clipboard!';
         setTimeout(() => { btn.innerHTML = origHtml; }, 2000);
       } catch (e) {
-        prompt('Copy this link to share your team roster and history:', shareUrl);
+        prompt('Copy this link:', roleUrl);
       }
     }
 
     function loadState() {
       initPwaSupport();
-      let loadedFromHash = false;
 
       try {
         const rawMulti = localStorage.getItem(MULTI_TEAM_STORAGE_KEY);
@@ -1191,59 +1445,25 @@
         console.warn('Could not load saved state:', e);
       }
 
-      syncActiveTeamPointer();
-
-      if (window.location.hash && window.location.hash.startsWith('#s=')) {
-        try {
-          const encoded = window.location.hash.slice(3);
-          const sharedData = decodeStateFromBase64(encoded);
-          if (sharedData && Array.isArray(sharedData.players)) {
-            const incomingTeam = normalizeTeamObject(sharedData);
-            const existingIndex = appStore.teams.findIndex(
-              t => t.id === incomingTeam.id || t.teamName.toLowerCase() === incomingTeam.teamName.toLowerCase()
-            );
-
-            if (appStore.teams.length === 1 && appStore.teams[0].players.length === 0) {
-              appStore.teams[0] = incomingTeam;
-              appStore.activeTeamId = incomingTeam.id;
-              loadedFromHash = true;
-            } else if (existingIndex >= 0) {
-              const shouldUpdate = confirm(
-                `Update existing team "${appStore.teams[existingIndex].teamName}" with the shared link data? (Cancel to add it as a separate team instead)`
-              );
-              if (shouldUpdate) {
-                appStore.teams[existingIndex] = incomingTeam;
-                appStore.activeTeamId = incomingTeam.id;
-              } else {
-                incomingTeam.id = 'team_' + Date.now();
-                incomingTeam.teamName = `${incomingTeam.teamName} (Shared)`;
-                appStore.teams.push(incomingTeam);
-                appStore.activeTeamId = incomingTeam.id;
-              }
-              loadedFromHash = true;
-            } else {
-              appStore.teams.push(incomingTeam);
-              appStore.activeTeamId = incomingTeam.id;
-              loadedFromHash = true;
-            }
-          }
-          history.replaceState(null, '', window.location.pathname + window.location.search);
-        } catch (err) {
-          console.warn('Failed to parse shared URL state:', err);
+      if (sharedTeamIdParam) {
+        let existing = appStore.teams.find(t => t.id === sharedTeamIdParam);
+        if (!existing) {
+          existing = createBlankTeam('Loading Live Team...');
+          existing.id = sharedTeamIdParam;
+          appStore.teams.push(existing);
         }
+        appStore.activeTeamId = existing.id;
       }
 
       syncActiveTeamPointer();
-      timer.secondsLeft = state.quarterMins * 60;
-      recalculateSchedule();
+      applyCloudTimerState();
+      recalculateSchedule(false);
       renderAll();
-
-      if (loadedFromHash) {
-        document.getElementById('sharedImportBanner').classList.remove('hidden');
-      }
+      initFirebaseConnection();
     }
 
-    function saveState() {
+    function saveState(syncCloud = true) {
+      state.updatedAt = Date.now();
       try {
         localStorage.setItem(MULTI_TEAM_STORAGE_KEY, JSON.stringify({
           activeTeamId: appStore.activeTeamId,
@@ -1251,6 +1471,9 @@
         }));
       } catch (e) {
         console.warn('Save error:', e);
+      }
+      if (syncCloud && canEditGame()) {
+        pushActiveTeamToCloud();
       }
     }
 
@@ -1276,7 +1499,7 @@
       return 4 * state.shiftsPerQuarter;
     }
 
-    function recalculateSchedule() {
+    function recalculateSchedule(syncCloud = true) {
       const presentPlayers = state.players.filter(p => p.present);
       const numPresent = presentPlayers.length;
       const fieldSize = getTotalFieldSlots();
@@ -1363,7 +1586,7 @@
       }
 
       state.computedShifts = shifts;
-      saveState();
+      saveState(syncCloud);
     }
 
     function assignFairPositions(fieldPlayers, runningCounts, prevShift, existingPosMap = {}) {
@@ -1427,9 +1650,6 @@
       return result;
     }
 
-    // =========================================================================
-    // ACTIVE SHIFT RESOLUTION FOR TIMER & SCHEDULE HIGHLIGHTING
-    // =========================================================================
     function isCurrentQuarterFullSub() {
       return state.shiftsPerQuarter === 1 || !!state.fullQuarterLocks[timer.quarter];
     }
@@ -1445,9 +1665,10 @@
     }
 
     // =========================================================================
-    // UI RENDERING
+    // UI RENDERING & ROLE-BASED VISIBILITY
     // =========================================================================
     function renderAll() {
+      renderRolePermissionsUI();
       renderTabsAndOnboarding();
       renderHeaderAndSettings();
       renderScoreboard();
@@ -1459,9 +1680,67 @@
       renderStatsAndHistoryTab();
     }
 
+    function renderRolePermissionsUI() {
+      const banner = document.getElementById('roleBanner');
+      const teamSelect = document.getElementById('headerTeamSelect');
+      const staticTeamName = document.getElementById('headerStaticTeamName');
+      const setupGearBtn = document.getElementById('setupGearBtn');
+      const posToggleBtn = document.getElementById('posToggleBtn');
+      const addOurGoalBtn = document.getElementById('addOurGoalBtn');
+      const oppScoreControls = document.getElementById('oppScoreControls');
+      const opponentInput = document.getElementById('opponentNameInput');
+      const timerActionButtons = document.getElementById('timerActionButtons');
+      const whistleBtn = document.getElementById('whistleBtn');
+      const selectAllBtn = document.getElementById('selectAllAttendanceBtn');
+      const rotateOrderBtn = document.getElementById('rotateOrderBtn');
+      const smsSection = document.getElementById('smsSectionCard');
+      const completeGameSection = document.getElementById('completeGameSectionCard');
+
+      if (appRole === 'viewer') {
+        banner.className = 'px-4 py-1.5 text-xs font-extrabold text-center bg-sky-500/20 text-sky-200 border-b border-sky-500/30';
+        banner.innerHTML = '👀 LIVE PARENT VIEWER MODE — Real-time updates from the sideline (Read-Only)';
+        banner.classList.remove('hidden');
+
+        teamSelect.classList.add('hidden');
+        staticTeamName.textContent = state.teamName || 'Live Team';
+        staticTeamName.classList.remove('hidden');
+
+        setupGearBtn.classList.add('hidden');
+        posToggleBtn.classList.add('hidden');
+        addOurGoalBtn.classList.add('hidden');
+        oppScoreControls.classList.add('hidden');
+        opponentInput.disabled = true;
+        timerActionButtons.classList.add('hidden');
+        whistleBtn.classList.add('hidden');
+        selectAllBtn.classList.add('hidden');
+        rotateOrderBtn.classList.add('hidden');
+        smsSection.classList.add('hidden');
+        completeGameSection.classList.add('hidden');
+
+        document.getElementById('rollCallHeaderTitle').textContent = '📋 Active Match Roster';
+        document.getElementById('scheduleSubHint').textContent = 'Active shift highlighted in green';
+        document.getElementById('historySubHint').textContent = 'Tap any match card to view the box score';
+      } else if (appRole === 'assistant') {
+        banner.className = 'px-4 py-1.5 text-xs font-extrabold text-center bg-amber-500/20 text-amber-200 border-b border-amber-500/30';
+        banner.innerHTML = '🧢 ASSISTANT COACH MODE — Live Sideline Score, Timer & Sub Editor';
+        banner.classList.remove('hidden');
+
+        teamSelect.classList.add('hidden');
+        staticTeamName.textContent = state.teamName || 'Live Team';
+        staticTeamName.classList.remove('hidden');
+
+        setupGearBtn.classList.add('hidden');
+      } else {
+        banner.classList.add('hidden');
+        teamSelect.classList.remove('hidden');
+        staticTeamName.classList.add('hidden');
+        setupGearBtn.classList.remove('hidden');
+      }
+    }
+
     function switchMainTab(tab) {
       state.activeTab = tab;
-      saveState();
+      saveState(false);
       renderTabsAndOnboarding();
       if (tab === 'stats') renderStatsAndHistoryTab();
     }
@@ -1479,7 +1758,7 @@
         : 'py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white';
 
       const onboarding = document.getElementById('onboardingCard');
-      if (state.players.length === 0) {
+      if (isHeadCoach() && state.players.length === 0) {
         onboarding.classList.remove('hidden');
         document.getElementById('onboardTeamNameInput').value =
           (state.teamName === 'My Team' || state.teamName.startsWith('Team ')) ? '' : state.teamName;
@@ -1498,6 +1777,7 @@
         `<option value="__ADD_NEW_TEAM__">➕ Add New Team...</option>`
       ].join('');
 
+      document.getElementById('headerStaticTeamName').textContent = state.teamName || 'My Team';
       document.getElementById('teamNameInput').value = state.teamName || '';
 
       const deleteBtn = document.getElementById('deleteTeamBtn');
@@ -1588,31 +1868,35 @@
               <span class="font-bold text-white">⚽ ${escapeHtml(scorerName)}</span>
               ${assistName ? `<span class="text-slate-400">• 👟 Ast: <strong class="text-blue-300">${escapeHtml(assistName)}</strong></span>` : `<span class="text-slate-500 italic">(Unassisted)</span>`}
             </div>
-            <button onclick="removeGoal('${g.id}')" class="text-slate-500 hover:text-rose-400 text-xs px-1.5" title="Undo Goal">✕</button>
+            ${canEditGame() ? `<button onclick="removeGoal('${g.id}')" class="text-slate-500 hover:text-rose-400 text-xs px-1.5" title="Undo Goal">✕</button>` : ''}
           </div>
         `;
       }).join('');
     }
 
     function updateTeamName(val) {
+      if (!isHeadCoach()) return;
       state.teamName = (val || '').trim() || 'My Team';
       saveState();
       renderAll();
     }
 
     function updateOpponentName(val) {
+      if (!canEditGame()) return;
       state.currentMatch.opponent = (val || '').trim() || 'Opponent';
       saveState();
       renderScoreboard();
     }
 
     function adjustOpponentScore(delta) {
+      if (!canEditGame()) return;
       state.currentMatch.oppScore = Math.max(0, (state.currentMatch.oppScore || 0) + delta);
       saveState();
       renderScoreboard();
     }
 
     function openGoalModal() {
+      if (!canEditGame()) return;
       const presentPlayers = state.players.filter(p => p.present);
       goalDraft = {
         scorerId: presentPlayers.length > 0 ? presentPlayers[0].id : 'OWN_GOAL',
@@ -1684,6 +1968,7 @@
     }
 
     function confirmGoalLog() {
+      if (!canEditGame()) return;
       const mins = Math.floor(timer.secondsLeft / 60);
       const secs = timer.secondsLeft % 60;
       const clockStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
@@ -1703,6 +1988,7 @@
     }
 
     function removeGoal(goalId) {
+      if (!canEditGame()) return;
       const idx = state.currentMatch.goals.findIndex(g => g.id === goalId);
       if (idx >= 0) {
         state.currentMatch.goals.splice(idx, 1);
@@ -1713,11 +1999,11 @@
     }
 
     // =========================================================================
-    // ATTENDANCE, SCHEDULE & BALANCE TABLE RENDERING (WITH SORTING)
+    // ATTENDANCE, SCHEDULE & BALANCE TABLE RENDERING
     // =========================================================================
     function setRosterSort(mode) {
       state.rosterSort = mode;
-      saveState();
+      saveState(false);
       renderAttendance();
     }
 
@@ -1751,26 +2037,28 @@
 
       const container = document.getElementById('attendanceChips');
       if (state.players.length === 0) {
-        container.innerHTML = `<span class="text-xs text-slate-500 italic">Add players above to begin roll call.</span>`;
+        container.innerHTML = `<span class="text-xs text-slate-500 italic">No players in roster yet.</span>`;
         return;
       }
 
       const sortedPlayers = getSortedRosterList(state.players);
+      const editable = canEditGame();
 
       container.innerHTML = sortedPlayers.map(p => {
         const badge = formatPlayerBadge(p);
+        const clickAttr = editable ? `onclick="togglePlayerPresence('${p.id}')"` : '';
         if (p.present) {
           return `
-            <button onclick="togglePlayerPresence('${p.id}')"
-              class="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm transition active:scale-95">
+            <button ${clickAttr}
+              class="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm transition ${editable ? 'active:scale-95' : 'cursor-default'}">
               <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
               <span>${escapeHtml(badge)}</span>
             </button>
           `;
         } else {
           return `
-            <button onclick="togglePlayerPresence('${p.id}')"
-              class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/70 text-slate-500 border border-slate-800 line-through flex items-center gap-1.5 transition active:scale-95">
+            <button ${clickAttr}
+              class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/70 text-slate-500 border border-slate-800 line-through flex items-center gap-1.5 transition ${editable ? 'active:scale-95' : 'cursor-default'}">
               <span class="w-2 h-2 rounded-full bg-slate-600"></span>
               <span>${escapeHtml(badge)}</span>
             </button>
@@ -1784,6 +2072,7 @@
       const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
       const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
       const activeShift = getActiveShiftObject();
+      const editable = canEditGame();
 
       let html = '';
       for (let q = 1; q <= 4; q++) {
@@ -1791,7 +2080,6 @@
         const isFullQtr = state.shiftsPerQuarter === 1 || !!state.fullQuarterLocks[q];
         const isActiveQuarter = timer.quarter === q;
 
-        // If full quarter is toggled on for this quarter in 2-shift mode, display a single unified full-quarter card
         const visibleShifts = (state.shiftsPerQuarter === 2 && state.fullQuarterLocks[q] && qShifts.length > 0)
           ? [qShifts[0]]
           : qShifts;
@@ -1804,18 +2092,18 @@
           }">
             <div class="flex items-center justify-between border-b border-slate-800 pb-2">
               <div class="flex items-center gap-2">
-                <button onclick="setTimerQuarter(${q})"
+                <button ${editable ? `onclick="setTimerQuarter(${q})"` : ''}
                   class="px-2 py-0.5 rounded-md font-extrabold text-xs transition ${
                     isActiveQuarter
                       ? 'bg-emerald-500 text-slate-950 shadow'
-                      : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
+                      : 'bg-emerald-500/20 text-emerald-300'
                   }">
                   Quarter ${q}
                 </button>
                 <span class="text-[11px] text-slate-400">${state.quarterMins}m</span>
                 ${isActiveQuarter ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/40">🟢 ACTIVE</span>` : ''}
               </div>
-              ${state.shiftsPerQuarter === 2 ? `
+              ${state.shiftsPerQuarter === 2 && editable ? `
                 <button onclick="toggleFullQuarter(${q})"
                   class="px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${
                     state.fullQuarterLocks[q]
@@ -1824,7 +2112,7 @@
                   }">
                   ${state.fullQuarterLocks[q] ? '🔒 Full Qtr (1.0)' : 'Full Qtr (No Mid-Sub)'}
                 </button>
-              ` : `<span class="text-[11px] text-slate-500 font-semibold">Full Qtr (1.0)</span>`}
+              ` : (isFullQtr ? `<span class="text-[11px] text-slate-500 font-semibold">Full Qtr (1.0)</span>` : '')}
             </div>
 
             <div class="space-y-2">
@@ -1847,13 +2135,13 @@
                 });
 
                 return `
-                  <div onclick="openEditModal(${shift.index})"
-                    class="group cursor-pointer rounded-xl p-2.5 border transition ${
+                  <div ${editable ? `onclick="openEditModal(${shift.index})"` : ''}
+                    class="group ${editable ? 'cursor-pointer' : 'cursor-default'} rounded-xl p-2.5 border transition ${
                       isShiftActive
                         ? 'bg-emerald-950/35 border-emerald-400 ring-1 ring-emerald-400/50 shadow-md'
                         : shift.locked
                           ? 'bg-amber-500/10 border-amber-500/40'
-                          : 'bg-slate-950/60 border-slate-800/90 hover:border-slate-700'
+                          : 'bg-slate-950/60 border-slate-800/90'
                     }">
                     <div class="flex items-center justify-between mb-1.5">
                       <div class="flex items-center gap-1.5 flex-wrap">
@@ -1861,7 +2149,7 @@
                         ${isShiftActive ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-extrabold">▶ IN PLAY</span>` : ''}
                         ${shift.locked ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">LOCKED</span>` : ''}
                       </div>
-                      <span class="text-[11px] text-emerald-400 group-hover:underline font-medium">✏️ Edit Actual</span>
+                      ${editable ? `<span class="text-[11px] text-emerald-400 group-hover:underline font-medium">✏️ Edit Actual</span>` : ''}
                     </div>
 
                     <div class="flex items-center gap-1.5 flex-wrap">
@@ -1918,7 +2206,7 @@
         state.balanceSort.col = col;
         state.balanceSort.dir = (col === 'name' || col === 'number') ? 'asc' : 'desc';
       }
-      saveState();
+      saveState(false);
       renderBalanceTable();
     }
 
@@ -2020,7 +2308,7 @@
         state.statsSort.col = col;
         state.statsSort.dir = (col === 'name' || col === 'number') ? 'asc' : 'desc';
       }
-      saveState();
+      saveState(false);
       renderStatsAndHistoryTab();
     }
 
@@ -2049,7 +2337,7 @@
 
       const statsBody = document.getElementById('seasonStatsTableBody');
       if (state.players.length === 0) {
-        statsBody.innerHTML = `<tr><td colspan="8" class="py-4 text-center text-slate-500 italic">Add players to your roster to track season stats.</td></tr>`;
+        statsBody.innerHTML = `<tr><td colspan="8" class="py-4 text-center text-slate-500 italic">No players in roster yet.</td></tr>`;
       } else {
         const sortedPlayers = [...state.players].sort((a, b) => {
           let cmp = 0;
@@ -2095,7 +2383,7 @@
       if (state.gameHistory.length === 0) {
         histContainer.innerHTML = `
           <div class="text-xs text-slate-500 italic py-6 text-center bg-slate-950/50 rounded-xl border border-slate-800/70">
-            No completed games saved yet for ${escapeHtml(state.teamName)}. Tap "✅ Complete & Save Game" at the bottom of the Live Game tab when a match finishes.
+            No completed games saved yet for ${escapeHtml(state.teamName)}.
           </div>
         `;
         return;
@@ -2123,7 +2411,7 @@
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-[11px] text-slate-400">${escapeHtml(game.date)}</span>
-                <span class="text-[11px] text-emerald-400 font-semibold group-hover:underline">✏️ View / Edit</span>
+                <span class="text-[11px] text-emerald-400 font-semibold group-hover:underline">${canEditGame() ? '✏️ View / Edit' : '📋 View Details'}</span>
               </div>
             </div>
 
@@ -2136,19 +2424,18 @@
                   </span>
                 `).join('')}
               </div>
-            ` : `<div class="text-[11px] text-slate-500 italic">No team goals logged • Tap to view or edit match details</div>`}
+            ` : `<div class="text-[11px] text-slate-500 italic">No team goals logged</div>`}
           </div>
         `;
       }).join('');
     }
 
     function finishAndSaveGame() {
-      if (state.players.length === 0) return;
+      if (!canEditGame() || state.players.length === 0) return;
 
       const presentPlayers = state.players.filter(p => p.present);
       const shiftWeight = getShiftQuarterWeight(state.shiftsPerQuarter);
 
-      // Snapshot per-player quarter stats for this game so it can be viewed/edited later
       const gamePlayerStats = {};
       state.players.forEach(p => {
         gamePlayerStats[p.id] = {
@@ -2229,7 +2516,7 @@
       };
       state.lockedShifts = {};
       state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
-      resetTimer();
+      resetTimer(false);
       recalculateSchedule();
       switchMainTab('stats');
       renderAll();
@@ -2254,7 +2541,6 @@
       if (!game) return;
       editingHistoryGameId = gameId;
 
-      // Build editable player stats even for legacy games that didn't store playerStats
       const draftPlayerStats = {};
       state.players.forEach(p => {
         const existing = game.playerStats && game.playerStats[p.id];
@@ -2287,6 +2573,22 @@
         rotationSnapshot: game.rotationSnapshot || null
       };
 
+      const editable = canEditGame();
+      document.getElementById('gameDetailModalTitle').textContent = editable ? '📋 Match Details & Editor' : '📋 Match Box Score';
+      document.getElementById('gameDetailModalSubtitle').textContent = editable
+        ? 'Edit score, goals, assists, or player quarter counts. Saving updates season stats automatically.'
+        : 'Completed match summary and player quarter breakdown.';
+
+      ['histEditDate', 'histEditTeamName', 'histEditOpponent', 'histEditOurScore', 'histEditOppScore'].forEach(id => {
+        document.getElementById(id).disabled = !editable;
+      });
+      document.querySelectorAll('.hist-edit-btn').forEach(el => {
+        el.style.display = editable ? '' : 'none';
+      });
+      document.getElementById('histAddGoalBtn').style.display = editable ? '' : 'none';
+      document.getElementById('histDeleteGameBtn').style.display = isHeadCoach() ? '' : 'none';
+      document.getElementById('histSaveGameBtn').style.display = editable ? '' : 'none';
+
       document.getElementById('histEditDate').value = histDraft.date;
       document.getElementById('histEditTeamName').value = histDraft.teamName;
       document.getElementById('histEditOpponent').value = histDraft.opponent;
@@ -2307,7 +2609,7 @@
     }
 
     function adjustHistDraftScore(side, delta) {
-      if (!histDraft) return;
+      if (!canEditGame() || !histDraft) return;
       if (side === 'our') {
         const cur = parseInt(document.getElementById('histEditOurScore').value, 10) || 0;
         document.getElementById('histEditOurScore').value = Math.max(0, cur + delta);
@@ -2319,8 +2621,9 @@
 
     function renderHistEditGoals() {
       const container = document.getElementById('histEditGoalsList');
+      const editable = canEditGame();
       if (!histDraft.goals || histDraft.goals.length === 0) {
-        container.innerHTML = `<div class="text-xs text-slate-500 italic py-2 text-center bg-slate-950 rounded-xl border border-slate-800">No team goals logged for this game. Tap "+ Add Goal" to add one.</div>`;
+        container.innerHTML = `<div class="text-xs text-slate-500 italic py-2 text-center bg-slate-950 rounded-xl border border-slate-800">No team goals logged for this game.</div>`;
         return;
       }
 
@@ -2337,18 +2640,18 @@
       container.innerHTML = histDraft.goals.map((g, idx) => `
         <div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div class="flex items-center gap-1.5">
-            <select onchange="updateHistGoalField(${idx}, 'quarter', Number(this.value))"
+            <select ${editable ? '' : 'disabled'} onchange="updateHistGoalField(${idx}, 'quarter', Number(this.value))"
               class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-emerald-300 font-bold">
               ${[1, 2, 3, 4].map(q => `<option value="${q}" ${Number(g.quarter) === q ? 'selected' : ''}>Q${q}</option>`).join('')}
             </select>
-            <input type="text" value="${escapeHtml(g.clock || '04:00')}" maxlength="5"
+            <input ${editable ? '' : 'disabled'} type="text" value="${escapeHtml(g.clock || '04:00')}" maxlength="5"
               onchange="updateHistGoalField(${idx}, 'clock', this.value)"
               class="w-14 bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-center mono text-slate-300" />
           </div>
 
           <div class="flex items-center gap-1.5 flex-1 min-w-[180px]">
             <span class="text-slate-400">⚽</span>
-            <select onchange="updateHistGoalField(${idx}, 'scorerId', this.value)"
+            <select ${editable ? '' : 'disabled'} onchange="updateHistGoalField(${idx}, 'scorerId', this.value)"
               class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white font-bold">
               ${scorerOptions.map(o => `<option value="${o.id}" ${g.scorerId === o.id ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
             </select>
@@ -2356,23 +2659,23 @@
 
           <div class="flex items-center gap-1.5 flex-1 min-w-[170px]">
             <span class="text-slate-400">👟</span>
-            <select onchange="updateHistGoalField(${idx}, 'assistId', this.value || null)"
+            <select ${editable ? '' : 'disabled'} onchange="updateHistGoalField(${idx}, 'assistId', this.value || null)"
               class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-blue-300 font-semibold">
               ${assistOptions.map(o => `<option value="${o.id}" ${(g.assistId || '') === o.id ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
             </select>
-            <button onclick="removeHistDraftGoal(${idx})" class="text-slate-500 hover:text-rose-400 px-1.5 font-bold" title="Remove Goal">✕</button>
+            ${editable ? `<button onclick="removeHistDraftGoal(${idx})" class="text-slate-500 hover:text-rose-400 px-1.5 font-bold" title="Remove Goal">✕</button>` : ''}
           </div>
         </div>
       `).join('');
     }
 
     function updateHistGoalField(idx, field, value) {
-      if (!histDraft || !histDraft.goals[idx]) return;
+      if (!canEditGame() || !histDraft || !histDraft.goals[idx]) return;
       histDraft.goals[idx][field] = value;
     }
 
     function addHistDraftGoal() {
-      if (!histDraft) return;
+      if (!canEditGame() || !histDraft) return;
       const defaultScorer = state.players.length > 0 ? state.players[0].id : 'OWN_GOAL';
       histDraft.goals.push({
         id: 'hg_' + Date.now(),
@@ -2389,7 +2692,7 @@
     }
 
     function removeHistDraftGoal(idx) {
-      if (!histDraft) return;
+      if (!canEditGame() || !histDraft) return;
       histDraft.goals.splice(idx, 1);
       const curScore = parseInt(document.getElementById('histEditOurScore').value, 10) || 0;
       document.getElementById('histEditOurScore').value = Math.max(0, curScore - 1);
@@ -2398,6 +2701,7 @@
 
     function renderHistEditPlayers() {
       const container = document.getElementById('histEditPlayersList');
+      const editable = canEditGame();
       if (!histDraft || state.players.length === 0) {
         container.innerHTML = '';
         return;
@@ -2408,25 +2712,25 @@
         return `
           <div class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
             <div class="flex items-center gap-2 min-w-[120px]">
-              <input type="checkbox" ${ps.present ? 'checked' : ''}
+              <input ${editable ? '' : 'disabled'} type="checkbox" ${ps.present ? 'checked' : ''}
                 onchange="toggleHistPlayerPresent('${p.id}', this.checked)"
                 class="rounded accent-emerald-500" />
               <span class="font-bold text-white ${ps.present ? '' : 'line-through text-slate-500'}">${escapeHtml(formatPlayerBadge(p))}</span>
             </div>
             <div class="flex items-center gap-2 flex-wrap text-[11px]">
-              <label class="text-slate-400">🪑<input type="number" step="0.5" min="0" value="${ps.BENCH || 0}"
+              <label class="text-slate-400">🪑<input ${editable ? '' : 'disabled'} type="number" step="0.5" min="0" value="${ps.BENCH || 0}"
                 onchange="updateHistPlayerStat('${p.id}', 'BENCH', this.value)"
                 class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
-              <label class="text-rose-400">FWD<input type="number" step="0.5" min="0" value="${ps.FWD || 0}"
+              <label class="text-rose-400">FWD<input ${editable ? '' : 'disabled'} type="number" step="0.5" min="0" value="${ps.FWD || 0}"
                 onchange="updateHistPlayerStat('${p.id}', 'FWD', this.value)"
                 class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
-              <label class="text-blue-400">MID<input type="number" step="0.5" min="0" value="${ps.MID || 0}"
+              <label class="text-blue-400">MID<input ${editable ? '' : 'disabled'} type="number" step="0.5" min="0" value="${ps.MID || 0}"
                 onchange="updateHistPlayerStat('${p.id}', 'MID', this.value)"
                 class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
-              <label class="text-emerald-400">DEF<input type="number" step="0.5" min="0" value="${ps.DEF || 0}"
+              <label class="text-emerald-400">DEF<input ${editable ? '' : 'disabled'} type="number" step="0.5" min="0" value="${ps.DEF || 0}"
                 onchange="updateHistPlayerStat('${p.id}', 'DEF', this.value)"
                 class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
-              <label class="text-amber-400">GK<input type="number" step="0.5" min="0" value="${ps.GK || 0}"
+              <label class="text-amber-400">GK<input ${editable ? '' : 'disabled'} type="number" step="0.5" min="0" value="${ps.GK || 0}"
                 onchange="updateHistPlayerStat('${p.id}', 'GK', this.value)"
                 class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
             </div>
@@ -2436,14 +2740,14 @@
     }
 
     function toggleHistPlayerPresent(playerId, isPresent) {
-      if (!histDraft || !histDraft.playerStats[playerId]) return;
+      if (!canEditGame() || !histDraft || !histDraft.playerStats[playerId]) return;
       histDraft.playerStats[playerId].present = isPresent;
       histDraft.playerStats[playerId].isLegacyUnrecorded = false;
       renderHistEditPlayers();
     }
 
     function updateHistPlayerStat(playerId, zone, val) {
-      if (!histDraft || !histDraft.playerStats[playerId]) return;
+      if (!canEditGame() || !histDraft || !histDraft.playerStats[playerId]) return;
       histDraft.playerStats[playerId][zone] = Math.max(0, parseFloat(val) || 0);
       histDraft.playerStats[playerId].isLegacyUnrecorded = false;
     }
@@ -2466,13 +2770,12 @@
     }
 
     function saveGameDetailEdits() {
-      if (!editingHistoryGameId || !histDraft) return;
+      if (!canEditGame() || !editingHistoryGameId || !histDraft) return;
       const gameIdx = state.gameHistory.findIndex(g => g.id === editingHistoryGameId);
       if (gameIdx < 0) return;
 
       const oldGame = state.gameHistory[gameIdx];
 
-      // 1. Reconcile Goals & Assists Deltas on Season Leaderboard
       const oldGoalsCount = {};
       const oldAssistsCount = {};
       (oldGame.goals || []).forEach(gl => {
@@ -2508,22 +2811,18 @@
         p.prior.goals = Math.max(0, (p.prior.goals || 0) + gDelta);
         p.prior.assists = Math.max(0, (p.prior.assists || 0) + aDelta);
 
-        // 2. Reconcile Player Participation & Quarter Shifts if recorded/edited
         const newPs = histDraft.playerStats[p.id];
         const oldPs = oldGame.playerStats ? oldGame.playerStats[p.id] : null;
-        if (newPs && !newPs.isLegacyUnrecorded) {
-          if (oldPs) {
-            const gpDelta = (newPs.present ? 1 : 0) - (oldPs.present ? 1 : 0);
-            p.prior.gamesPlayed = Math.max(0, (p.prior.gamesPlayed || 0) + gpDelta);
-            ['BENCH', 'FWD', 'MID', 'DEF', 'GK'].forEach(z => {
-              const zDelta = (Number(newPs[z]) || 0) - (Number(oldPs[z]) || 0);
-              p.prior[z] = Math.max(0, Math.round(((p.prior[z] || 0) + zDelta) * 100) / 100);
-            });
-          }
+        if (newPs && !newPs.isLegacyUnrecorded && oldPs) {
+          const gpDelta = (newPs.present ? 1 : 0) - (oldPs.present ? 1 : 0);
+          p.prior.gamesPlayed = Math.max(0, (p.prior.gamesPlayed || 0) + gpDelta);
+          ['BENCH', 'FWD', 'MID', 'DEF', 'GK'].forEach(z => {
+            const zDelta = (Number(newPs[z]) || 0) - (Number(oldPs[z]) || 0);
+            p.prior[z] = Math.max(0, Math.round(((p.prior[z] || 0) + zDelta) * 100) / 100);
+          });
         }
       });
 
-      // 3. Save Updated Game Object
       state.gameHistory[gameIdx] = {
         ...oldGame,
         date: document.getElementById('histEditDate').value.trim() || oldGame.date,
@@ -2541,16 +2840,16 @@
     }
 
     function deleteCurrentModalHistoryGame() {
-      if (!editingHistoryGameId) return;
+      if (!isHeadCoach() || !editingHistoryGameId) return;
       if (!confirm('Delete this game from history and subtract its goals, assists, and shifts from season totals?')) return;
       deleteHistoryGame(editingHistoryGameId);
       closeGameDetailModal();
     }
 
     function deleteHistoryGame(gameId) {
+      if (!isHeadCoach()) return;
       const game = state.gameHistory.find(g => g.id === gameId);
       if (game) {
-        // Subtract goals and assists from season totals
         (game.goals || []).forEach(gl => {
           const sId = resolveGoalPlayerId(gl, 'scorerId', 'scorerLabel');
           const aId = resolveGoalPlayerId(gl, 'assistId', 'assistLabel');
@@ -2560,7 +2859,6 @@
           if (assister) assister.prior.assists = Math.max(0, (assister.prior.assists || 0) - 1);
         });
 
-        // Subtract per-game player shifts if stored
         if (game.playerStats) {
           state.players.forEach(p => {
             const ps = game.playerStats[p.id];
@@ -2589,7 +2887,7 @@
 
       state.computedShifts.forEach(s => {
         if (state.shiftsPerQuarter === 2 && s.part === 2 && state.fullQuarterLocks[s.quarter]) {
-          return; // Skip duplicate 2nd shift bubble when Full Quarter is locked
+          return;
         }
 
         const qOrd = ordinals[s.quarter];
@@ -2649,7 +2947,7 @@
 
     function setSmsStyle(style) {
       state.smsStyle = style;
-      saveState();
+      saveState(false);
       renderSmsBubbles();
     }
 
@@ -2678,6 +2976,7 @@
     // ON-THE-FLY SHIFT & POSITION MODAL ACTIONS
     // =========================================================================
     function openEditModal(shiftIdx) {
+      if (!canEditGame()) return;
       editingShiftIdx = shiftIdx;
       const shift = state.computedShifts[shiftIdx];
       if (!shift) return;
@@ -2768,7 +3067,7 @@
     }
 
     function saveModalShift() {
-      if (editingShiftIdx === null) return;
+      if (!canEditGame() || editingShiftIdx === null) return;
       state.lockedShifts[editingShiftIdx] = {
         benchIds: [...modalDraft.benchIds],
         positions: { ...modalDraft.positions }
@@ -2779,7 +3078,7 @@
     }
 
     function unlockCurrentModalShift() {
-      if (editingShiftIdx === null) return;
+      if (!canEditGame() || editingShiftIdx === null) return;
       delete state.lockedShifts[editingShiftIdx];
       closeEditModal();
       recalculateSchedule();
@@ -2787,9 +3086,10 @@
     }
 
     // =========================================================================
-    // ROSTER, ATTENDANCE & FORMAT HANDLERS (PRESERVES 1ST SHIFT ON MODE SWITCH)
+    // ROSTER, ATTENDANCE & FORMAT HANDLERS
     // =========================================================================
     function addPlayerFromOnboarding() {
+      if (!isHeadCoach()) return;
       const numEl = document.getElementById('onboardPlayerNum');
       const nameEl = document.getElementById('onboardPlayerName');
       const teamEl = document.getElementById('onboardTeamNameInput');
@@ -2818,6 +3118,7 @@
     }
 
     function addPlayer() {
+      if (!isHeadCoach()) return;
       const numInput = document.getElementById('newPlayerNumberInput');
       const nameInput = document.getElementById('newPlayerInput');
       const name = (nameInput.value || '').trim();
@@ -2839,6 +3140,7 @@
     }
 
     function updatePlayerNumber(playerId, newNum) {
+      if (!isHeadCoach()) return;
       const p = state.players.find(x => x.id === playerId);
       if (p) {
         p.number = (newNum || '').trim();
@@ -2848,6 +3150,7 @@
     }
 
     function updatePlayerName(playerId, newName) {
+      if (!isHeadCoach()) return;
       const p = state.players.find(x => x.id === playerId);
       if (p && newName.trim()) {
         p.name = newName.trim();
@@ -2857,22 +3160,26 @@
     }
 
     function removePlayer(id) {
+      if (!isHeadCoach()) return;
       state.players = state.players.filter(p => p.id !== id);
       recalculateSchedule();
       renderAll();
     }
 
     function togglePositionMode() {
+      if (!canEditGame()) return;
       state.trackPositions = !state.trackPositions;
       saveState();
       renderAll();
     }
 
     function toggleDrawer(id) {
+      if (!isHeadCoach()) return;
       document.getElementById(id).classList.toggle('hidden');
     }
 
     function togglePlayerPresence(playerId) {
+      if (!canEditGame()) return;
       const p = state.players.find(x => x.id === playerId);
       if (p) {
         p.present = !p.present;
@@ -2882,12 +3189,14 @@
     }
 
     function setAllAttendance(val) {
+      if (!canEditGame()) return;
       state.players.forEach(p => { p.present = val; });
       recalculateSchedule();
       renderAll();
     }
 
     function rotateStarterOrder() {
+      if (!canEditGame()) return;
       if (state.players.length > 1) {
         const first = state.players.shift();
         state.players.push(first);
@@ -2897,6 +3206,7 @@
     }
 
     function handleFormationChange(presetKey) {
+      if (!isHeadCoach()) return;
       const preset = FORMATION_PRESETS[presetKey];
       if (preset) {
         state.formationKey = presetKey;
@@ -2908,17 +3218,18 @@
     }
 
     function adjustSlot(zone, delta) {
+      if (!isHeadCoach()) return;
       state.slots[zone] = Math.max(0, (state.slots[zone] || 0) + delta);
       recalculateSchedule();
       renderAll();
     }
 
     function handleTimingChange() {
+      if (!isHeadCoach()) return;
       const newQuarterMins = parseInt(document.getElementById('quarterMinsSelect').value, 10) || 8;
       const newShiftsPerQtr = parseInt(document.getElementById('shiftsPerQtrSelect').value, 10) || 2;
       const oldShiftsPerQtr = state.shiftsPerQuarter;
 
-      // Preserve the 1st shift of each quarter when switching between 2 Shifts/Qtr and Full Quarters (1 Shift/Qtr)
       if (oldShiftsPerQtr === 2 && newShiftsPerQtr === 1) {
         const preservedLocks = {};
         for (let q = 1; q <= 4; q++) {
@@ -2948,14 +3259,14 @@
 
       state.quarterMins = newQuarterMins;
       state.shiftsPerQuarter = newShiftsPerQtr;
-      resetTimer();
+      resetTimer(false);
       recalculateSchedule();
       renderAll();
     }
 
     function toggleFullQuarter(q) {
+      if (!canEditGame()) return;
       state.fullQuarterLocks[q] = !state.fullQuarterLocks[q];
-      // Lock the 1st shift of this quarter so its lineup is preserved
       if (state.shiftsPerQuarter === 2) {
         const firstIdx = (q - 1) * 2;
         const firstShift = state.computedShifts[firstIdx];
@@ -2971,6 +3282,7 @@
     }
 
     function adjustPrior(playerId, zone, delta) {
+      if (!isHeadCoach()) return;
       const p = state.players.find(x => x.id === playerId);
       if (p) {
         p.prior[zone] = Math.max(0, Math.round(((p.prior[zone] || 0) + delta) * 100) / 100);
@@ -2980,6 +3292,7 @@
     }
 
     function resetSeasonHistory() {
+      if (!isHeadCoach()) return;
       state.players.forEach(p => {
         p.prior = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 };
       });
@@ -2989,6 +3302,7 @@
     }
 
     function clearAllLocks() {
+      if (!canEditGame()) return;
       state.lockedShifts = {};
       state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
       recalculateSchedule();
@@ -2996,14 +3310,50 @@
     }
 
     // =========================================================================
-    // SIDELINE TIMER, LIVE IN-PLAY PANEL & WEB AUDIO REFEREE WHISTLE
+    // TIMESTAMP-SYNCED SIDELINE TIMER & LIVE IN-PLAY PANEL
     // =========================================================================
+    function syncTimerToStateAndCloud() {
+      state.timerSync = {
+        quarter: timer.quarter,
+        running: timer.running,
+        endTimeMs: timer.running ? (Date.now() + timer.secondsLeft * 1000) : null,
+        remainingSec: timer.secondsLeft,
+        midAlertFired: timer.midAlertFired
+      };
+      saveState(true);
+    }
+
+    function applyCloudTimerState() {
+      const ts = state.timerSync;
+      if (!ts) return;
+
+      timer.quarter = ts.quarter || 1;
+      timer.midAlertFired = !!ts.midAlertFired;
+
+      if (timer.intervalId) {
+        clearInterval(timer.intervalId);
+        timer.intervalId = null;
+      }
+
+      if (ts.running && ts.endTimeMs) {
+        const left = Math.max(0, Math.ceil((ts.endTimeMs - Date.now()) / 1000));
+        timer.secondsLeft = left;
+        timer.running = left > 0;
+        if (timer.running) {
+          timer.intervalId = setInterval(tickTimer, 1000);
+        }
+      } else {
+        timer.running = false;
+        timer.secondsLeft = typeof ts.remainingSec === 'number' ? ts.remainingSec : (state.quarterMins * 60);
+      }
+    }
+
     function renderLiveInPlayPanel() {
       const container = document.getElementById('liveInPlayContainer');
       if (!container) return;
 
       if (state.players.filter(p => p.present).length === 0) {
-        container.innerHTML = `<div class="text-xs text-slate-500 italic">Add or select present players below to view live on-field positions.</div>`;
+        container.innerHTML = `<div class="text-xs text-slate-500 italic">Waiting for active lineup...</div>`;
         return;
       }
 
@@ -3038,9 +3388,11 @@
               <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-300">Currently In Play — ${shiftDesc}</span>
             </div>
-            <button onclick="openEditModal(${activeShift.index})" class="text-[11px] font-semibold text-emerald-400 hover:underline">
-              ✏️ Edit Lineup
-            </button>
+            ${canEditGame() ? `
+              <button onclick="openEditModal(${activeShift.index})" class="text-[11px] font-semibold text-emerald-400 hover:underline">
+                ✏️ Edit Lineup
+              </button>
+            ` : ''}
           </div>
 
           <div class="flex items-center gap-1.5 flex-wrap pt-0.5">
@@ -3147,6 +3499,7 @@
     }
 
     function toggleTimer() {
+      if (!canEditGame()) return;
       if (timer.running) {
         clearInterval(timer.intervalId);
         timer.running = false;
@@ -3154,60 +3507,76 @@
         timer.running = true;
         timer.intervalId = setInterval(tickTimer, 1000);
       }
+      syncTimerToStateAndCloud();
       renderTimerUI();
     }
 
     function tickTimer() {
-      if (timer.secondsLeft > 0) {
+      if (timer.running && state.timerSync && state.timerSync.endTimeMs) {
+        timer.secondsLeft = Math.max(0, Math.ceil((state.timerSync.endTimeMs - Date.now()) / 1000));
+      } else if (timer.secondsLeft > 0) {
         timer.secondsLeft--;
-        const midSec = Math.floor((state.quarterMins * 60) / 2);
-
-        if (!isCurrentQuarterFullSub() && timer.secondsLeft === midSec && !timer.midAlertFired) {
-          timer.midAlertFired = true;
-          playWhistle(2);
-          showSubAlert(timer.quarter, 2);
-        }
-
-        if (timer.secondsLeft === 0) {
-          clearInterval(timer.intervalId);
-          timer.running = false;
-          playWhistle(3);
-          if (timer.quarter < 4) {
-            showSubAlert(timer.quarter + 1, 1);
-          }
-        }
-        renderTimerUI();
-        renderScheduleGrid();
       }
+
+      const midSec = Math.floor((state.quarterMins * 60) / 2);
+
+      if (!isCurrentQuarterFullSub() && timer.secondsLeft <= midSec && !timer.midAlertFired) {
+        timer.midAlertFired = true;
+        if (canEditGame()) playWhistle(2);
+        showSubAlert(timer.quarter, 2);
+      }
+
+      if (timer.secondsLeft <= 0) {
+        timer.secondsLeft = 0;
+        clearInterval(timer.intervalId);
+        timer.running = false;
+        if (canEditGame()) {
+          playWhistle(3);
+          syncTimerToStateAndCloud();
+        }
+        if (timer.quarter < 4) {
+          showSubAlert(timer.quarter + 1, 1);
+        }
+      }
+
+      renderTimerUI();
+      renderScheduleGrid();
     }
 
     function setTimerQuarter(q) {
+      if (!canEditGame()) return;
       timer.quarter = q;
-      resetTimer();
+      resetTimer(true);
       renderScheduleGrid();
     }
 
     function adjustTimer(deltaSec) {
+      if (!canEditGame()) return;
       const maxSec = state.quarterMins * 60;
       timer.secondsLeft = Math.max(0, Math.min(maxSec, timer.secondsLeft + deltaSec));
+      syncTimerToStateAndCloud();
       renderTimerUI();
       renderScheduleGrid();
     }
 
     function syncMidQuarter() {
-      if (isCurrentQuarterFullSub()) return;
+      if (!canEditGame() || isCurrentQuarterFullSub()) return;
       timer.secondsLeft = Math.floor((state.quarterMins * 60) / 2);
       timer.midAlertFired = true;
+      syncTimerToStateAndCloud();
       showSubAlert(timer.quarter, 2);
       renderTimerUI();
       renderScheduleGrid();
     }
 
-    function resetTimer() {
+    function resetTimer(syncToCloud = true) {
       clearInterval(timer.intervalId);
       timer.running = false;
       timer.secondsLeft = state.quarterMins * 60;
       timer.midAlertFired = false;
+      if (syncToCloud && canEditGame()) {
+        syncTimerToStateAndCloud();
+      }
       renderTimerUI();
     }
 
@@ -3282,6 +3651,74 @@
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
       }[m]));
     }
+
+    // Expose functions to global window object for inline onclick handlers
+    Object.assign(window, {
+      triggerPwaInstall,
+      openInviteModal,
+      closeInviteModal,
+      shareRoleLink,
+      handleTeamSelectChange,
+      createNewTeamPrompt,
+      deleteCurrentTeam,
+      togglePositionMode,
+      toggleDrawer,
+      switchMainTab,
+      updateTeamName,
+      handleFormationChange,
+      handleTimingChange,
+      adjustSlot,
+      resetSeasonHistory,
+      addPlayer,
+      addPlayerFromOnboarding,
+      updatePlayerNumber,
+      updatePlayerName,
+      removePlayer,
+      adjustPrior,
+      updateOpponentName,
+      openGoalModal,
+      closeGoalModal,
+      selectGoalScorer,
+      selectGoalAssist,
+      confirmGoalLog,
+      removeGoal,
+      adjustOpponentScore,
+      setTimerQuarter,
+      playWhistle,
+      toggleTimer,
+      adjustTimer,
+      syncMidQuarter,
+      resetTimer,
+      setRosterSort,
+      setAllAttendance,
+      rotateStarterOrder,
+      togglePlayerPresence,
+      toggleFullQuarter,
+      toggleBalanceSort,
+      toggleStatsSort,
+      openEditModal,
+      closeEditModal,
+      toggleModalBench,
+      setModalPlayerPos,
+      saveModalShift,
+      unlockCurrentModalShift,
+      setSmsStyle,
+      copySingleBubble,
+      copyAllSms,
+      clearAllLocks,
+      finishAndSaveGame,
+      openGameDetailModal,
+      closeGameDetailModal,
+      adjustHistDraftScore,
+      updateHistGoalField,
+      addHistDraftGoal,
+      removeHistDraftGoal,
+      toggleHistPlayerPresent,
+      updateHistPlayerStat,
+      saveGameDetailEdits,
+      deleteCurrentModalHistoryGame,
+      toggleFeedbackEmbed
+    });
 
     window.addEventListener('DOMContentLoaded', loadState);
   </script>
