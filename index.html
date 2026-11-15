@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>Sideline Pro — Soccer Sub, Position & Stats Manager</title>
+  <title>Sideline Pro: Soccer Sub, Position & Stats Manager</title>
 
   <!-- PWA Meta Tags & Manifest -->
   <meta name="theme-color" content="#0f172a" />
@@ -52,7 +52,7 @@
             <div class="flex items-center gap-1.5">
               <!-- Head Coach Multi-Team Dropdown -->
               <select id="headerTeamSelect" onchange="handleTeamSelectChange(this.value)"
-                class="bg-slate-800/90 hover:bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 font-extrabold text-sm text-white truncate max-w-[190px] sm:max-w-xs focus:outline-none focus:border-emerald-500 cursor-pointer">
+                class="bg-slate-800/90 hover:bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 font-extrabold text-sm text-white truncate max-w-[175px] sm:max-w-xs focus:outline-none focus:border-emerald-500 cursor-pointer">
               </select>
               <!-- Static Team Title for Assistant / Parent Viewer Modes -->
               <h1 id="headerStaticTeamName" class="hidden font-extrabold text-base text-white truncate"></h1>
@@ -70,21 +70,28 @@
 
         <div class="flex items-center gap-1.5 shrink-0">
           <button onclick="triggerPwaInstall()" id="pwaInstallBtn"
-            class="hidden px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition items-center gap-1"
+            class="hidden px-2 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition items-center gap-1"
             title="Install App">
-            <span>📲 Install</span>
+            <span>📲</span>
+          </button>
+
+          <!-- One-Time Coach Account Button (Head Coach Mode) -->
+          <button onclick="openCoachAuthModal()" id="coachAuthBtn"
+            class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center gap-1"
+            title="One-Time Coach Login to sync teams across devices">
+            <span id="coachAuthBtnLabel">🔑 Login</span>
           </button>
 
           <!-- Invite Parents / Assistant Coach Button -->
           <button onclick="openInviteModal()" id="inviteBtn"
             class="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold transition flex items-center gap-1"
             title="Invite Parents (View-Only) or Assistant Coaches (Live Edit)">
-            <span>📡 Invite / Live</span>
+            <span>📡 Invite</span>
           </button>
 
           <button onclick="togglePositionMode()" id="posToggleBtn"
-            class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1">
-            <span>📍 Pos: ON</span>
+            class="px-2 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1">
+            <span>📍 Pos</span>
           </button>
 
           <button onclick="toggleDrawer('settingsDrawer')" id="setupGearBtn"
@@ -216,17 +223,24 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
-          <label class="block text-xs font-semibold text-slate-400 mb-1">Quarter Mins</label>
-          <select id="quarterMinsSelect" onchange="handleTimingChange()"
-            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white">
-            <option value="6">6 min</option>
-            <option value="8" selected>8 min</option>
-            <option value="10">10 min</option>
-            <option value="12">12 min</option>
-            <option value="15">15 min</option>
-          </select>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Quarter Mins (Preset or Custom)</label>
+          <div class="flex gap-2">
+            <select id="quarterMinsSelect" onchange="handleQuarterSelectChange(this.value)"
+              class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white">
+              <option value="6">6 min</option>
+              <option value="8" selected>8 min</option>
+              <option value="10">10 min</option>
+              <option value="12">12 min</option>
+              <option value="12.5">12.5 min (10U)</option>
+              <option value="15">15 min</option>
+              <option value="custom">Custom...</option>
+            </select>
+            <input id="customQuarterMinsInput" type="number" step="0.5" min="1" max="60" placeholder="Mins"
+              onchange="handleCustomQuarterInput(this.value)"
+              class="hidden w-24 bg-slate-950 border border-emerald-500/60 rounded-xl px-2.5 py-2 text-sm text-center mono font-bold text-emerald-300 focus:outline-none" />
+          </div>
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-400 mb-1">Sub Mode (Weight)</label>
@@ -308,6 +322,46 @@
     <!-- TAB 1: LIVE GAME, SCOREBOARD, TIMER & SUB ROTATION                  -->
     <!-- =================================================================== -->
     <div id="viewGame" class="space-y-4">
+
+      <!-- 1-TAP PARENT IDENTITY & GAME RSVP CARD (Shown in Parent Viewer Mode) -->
+      <section id="parentRsvpCard" class="hidden bg-gradient-to-br from-slate-900 to-sky-950/40 border border-sky-500/40 rounded-2xl p-4 shadow-lg space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <span class="text-xs font-extrabold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
+              👋 Parent Check-In & Game RSVP
+            </span>
+            <p id="parentRsvpSubtext" class="text-xs text-slate-300 mt-0.5">
+              Tap your child's name once so your phone remembers them, then mark their status for this game.
+            </p>
+          </div>
+          <button onclick="clearParentIdentity()" id="switchParentPlayerBtn"
+            class="hidden text-[11px] font-semibold text-sky-300 hover:underline shrink-0">
+            Switch Player
+          </button>
+        </div>
+
+        <!-- Step 1: 1-Tap Player Picker -->
+        <div id="parentPlayerPicker" class="flex flex-wrap gap-1.5"></div>
+
+        <!-- Step 2: 1-Tap RSVP Status Buttons -->
+        <div id="parentRsvpActions" class="hidden grid grid-cols-3 gap-2 pt-1">
+          <button onclick="submitParentRsvp('going')" id="rsvpBtnGoing"
+            class="py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5">
+            <span>✅ Going</span>
+            <span class="text-[10px] font-normal opacity-80">In Lineup</span>
+          </button>
+          <button onclick="submitParentRsvp('late')" id="rsvpBtnLate"
+            class="py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5">
+            <span>⏳ Running Late</span>
+            <span class="text-[10px] font-normal opacity-80">Hold 1st Shift</span>
+          </button>
+          <button onclick="submitParentRsvp('out')" id="rsvpBtnOut"
+            class="py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5">
+            <span>❌ Out Today</span>
+            <span class="text-[10px] font-normal opacity-80">Auto-Adjusts Subs</span>
+          </button>
+        </div>
+      </section>
 
       <!-- Live Scoreboard & Goal Tracker -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
@@ -427,7 +481,7 @@
         <div id="liveInPlayContainer" class="mt-3.5 pt-3 border-t border-slate-800"></div>
       </section>
 
-      <!-- Roll Call / Attendance Bar with Sorting -->
+      <!-- Roll Call / Attendance Bar with Sorting & Parent RSVP Badges -->
       <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
           <div>
@@ -645,6 +699,83 @@
   </main>
 
   <!-- ===================================================================== -->
+  <!-- ONE-TIME COACH LOGIN MODAL (OPTIONAL ACCOUNT SYNC ACROSS DEVICES)     -->
+  <!-- ===================================================================== -->
+  <div id="coachAuthModal" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="font-extrabold text-base text-white">🔑 One-Time Coach Login</h3>
+          <p class="text-xs text-slate-400">Remember this device and sync all of your teams across your phone, tablet, or computer.</p>
+        </div>
+        <button onclick="closeCoachAuthModal()" class="text-slate-400 hover:text-white text-sm px-2 py-1">✕</button>
+      </div>
+
+      <!-- Signed-In View -->
+      <div id="authSignedInSection" class="hidden space-y-3">
+        <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3.5 text-xs space-y-1">
+          <div class="font-bold text-emerald-300">✅ Signed In & Device Remembered</div>
+          <div id="authUserEmailLabel" class="text-white font-semibold"></div>
+          <p class="text-slate-400 text-[11px] pt-1">
+            All teams on this device are linked to your coach account and automatically sync when you sign in on another device.
+          </p>
+        </div>
+        <div class="flex justify-between items-center pt-2">
+          <button onclick="handleCoachSignOut()"
+            class="px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-bold">
+            Sign Out
+          </button>
+          <button onclick="closeCoachAuthModal()"
+            class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold">
+            Done
+          </button>
+        </div>
+      </div>
+
+      <!-- Signed-Out Login / Create Account Form -->
+      <div id="authSignedOutSection" class="space-y-3 text-xs">
+        <button onclick="handleGoogleCoachLogin()"
+          class="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-extrabold text-xs shadow flex items-center justify-center gap-2 transition">
+          <span>🌐 Continue with Google (1-Tap)</span>
+        </button>
+
+        <div class="flex items-center gap-2 text-slate-500 py-1">
+          <div class="h-px bg-slate-800 flex-1"></div>
+          <span class="text-[11px] uppercase font-bold">or Email & Password</span>
+          <div class="h-px bg-slate-800 flex-1"></div>
+        </div>
+
+        <div class="space-y-2">
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Coach Email</label>
+            <input id="authEmailInput" type="email" placeholder="coach@example.com"
+              class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+          </div>
+          <div>
+            <label class="block text-slate-400 font-semibold mb-1">Password (6+ characters)</label>
+            <input id="authPasswordInput" type="password" placeholder="••••••••"
+              onkeydown="if(event.key==='Enter') handleEmailCoachAuth('login')"
+              class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+          </div>
+        </div>
+
+        <div id="authErrorMsg" class="hidden text-rose-400 font-semibold text-xs bg-rose-500/10 border border-rose-500/30 rounded-lg p-2"></div>
+
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button onclick="handleEmailCoachAuth('login')"
+            class="py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow">
+            Sign In
+          </button>
+          <button onclick="handleEmailCoachAuth('register')"
+            class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 font-bold text-xs">
+            Create Account
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
   <!-- INVITE PARENTS (VIEWER) & ASSISTANT COACH (LIVE EDIT) MODAL           -->
   <!-- ===================================================================== -->
   <div id="inviteModal" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -652,7 +783,7 @@
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
         <div>
           <h3 class="font-extrabold text-base text-white">📡 Live Sharing & Role Links</h3>
-          <p class="text-xs text-slate-400">Text parents a read-only viewer link or invite an assistant coach to help manage the game.</p>
+          <p class="text-xs text-slate-400">Text parents a read-only viewer link (with 1-tap RSVP) or invite an assistant coach to help manage the game.</p>
         </div>
         <button onclick="closeInviteModal()" class="text-slate-400 hover:text-white text-sm px-2 py-1">✕</button>
       </div>
@@ -664,12 +795,12 @@
       <div class="bg-slate-950 border border-sky-500/30 rounded-2xl p-4 space-y-2.5">
         <div class="flex items-center justify-between">
           <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-sky-500/20 text-sky-300 border border-sky-500/40">
-            👀 Parent / Family Viewer Mode
+            👀 Parent Viewer & 1-Tap RSVP Mode
           </span>
-          <span class="text-[11px] text-slate-400">Read-Only Live View</span>
+          <span class="text-[11px] text-slate-400">No Login Required</span>
         </div>
         <p class="text-xs text-slate-300">
-          Parents can watch the live score, goal scorers, real-time countdown clock, who is currently on the field, and upcoming substitutions—<strong>without being able to edit or change anything</strong>.
+          Parents can select their child to <strong>RSVP (Going, Running Late, or Out)</strong> and watch the live score, clock, and rotations without being able to change your lineup or settings.
         </p>
         <div class="flex gap-2 pt-1">
           <button onclick="shareRoleLink('viewer')" id="shareViewerBtn"
@@ -909,7 +1040,7 @@
     const urlRoleParam = (urlParams.get('role') || '').toLowerCase();
     const urlPinParam = urlParams.get('pin') || '';
 
-    // 'coach' (default full admin) | 'assistant' (co-editor) | 'viewer' (parent read-only)
+    // 'coach' (default full admin) | 'assistant' (co-editor) | 'viewer' (parent read-only + 1-tap RSVP)
     let appRole = 'coach';
     if (sharedTeamIdParam) {
       if (urlRoleParam === 'assistant' && urlPinParam) {
@@ -932,6 +1063,7 @@
     // =========================================================================
     const MULTI_TEAM_STORAGE_KEY = 'soccer_sub_pos_stats_v4_multiteam';
     const LEGACY_STORAGE_KEY = 'soccer_sub_pos_stats_v3';
+    const PRESET_QUARTER_VALUES = [6, 8, 10, 12, 12.5, 15];
 
     const FORMATION_PRESETS = {
       '5v5_212':  { label: '5v5 (2-1-2)',     slots: { FWD: 2, MID: 1, DEF: 2, GK: 0 } },
@@ -949,6 +1081,8 @@
       return {
         id: 'team_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
         editPin: String(Math.floor(1000 + Math.random() * 9000)),
+        ownerUid: null,
+        ownerEmail: null,
         v5QuarterScale: true,
         updatedAt: Date.now(),
         activeTab: 'game',
@@ -1005,16 +1139,59 @@
     let histDraft = null;
     let deferredInstallPrompt = null;
 
-    // Firebase Runtime Handles
+    // Firebase Runtime & Auth Handles
     let fbDb = null;
-    let fbSetDoc = null;
-    let fbDoc = null;
-    let fbOnSnapshot = null;
+    let fbAuth = null;
+    let fbAuthMod = null;
+    let fbFirestoreMod = null;
+    let currentCoachUser = null;
     let activeUnsubscribe = null;
     let isReceivingCloudSnapshot = false;
 
     // =========================================================================
-    // FIREBASE REAL-TIME SYNC ENGINE
+    // DURATION & NUMBER FORMATTING HELPERS (SUPPORTS 12.5m / CUSTOM)
+    // =========================================================================
+    function getQuarterTotalSeconds(qMins = state.quarterMins) {
+      return Math.max(30, Math.round((Number(qMins) || 8) * 60));
+    }
+
+    function getQuarterMidSeconds(qMins = state.quarterMins) {
+      return Math.floor(getQuarterTotalSeconds(qMins) / 2);
+    }
+
+    function fmtDurationLabel(minsFloat) {
+      const totalSecs = Math.round((Number(minsFloat) || 0) * 60);
+      const m = Math.floor(totalSecs / 60);
+      const s = totalSecs % 60;
+      if (s === 0) return `${m}m`;
+      if (s === 30) return `${m}.5m`;
+      return `${m}m ${s}s`;
+    }
+
+    function fmtNum(val) {
+      const n = Math.round((Number(val) || 0) * 100) / 100;
+      return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
+    }
+
+    function comparePlayerNumbers(a, b) {
+      const numA = parseInt(a.number, 10);
+      const numB = parseInt(b.number, 10);
+      const validA = !isNaN(numA);
+      const validB = !isNaN(numB);
+      if (validA && validB) {
+        if (numA !== numB) return numA - numB;
+      } else if (validA !== validB) {
+        return validA ? -1 : 1;
+      }
+      return (a.name || '').localeCompare(b.name || '');
+    }
+
+    function getShiftQuarterWeight(shiftsPerQuarter = state.shiftsPerQuarter) {
+      return shiftsPerQuarter === 1 ? 1.0 : 0.5;
+    }
+
+    // =========================================================================
+    // FIREBASE REAL-TIME SYNC & ONE-TIME COACH AUTH ENGINE
     // =========================================================================
     function setSyncBadge(mode, text) {
       const dot = document.getElementById('liveSyncDot');
@@ -1044,16 +1221,26 @@
 
       try {
         setSyncBadge('live', 'Connecting...');
-        const [{ initializeApp, getApps }, { getFirestore, doc, onSnapshot, setDoc }] = await Promise.all([
+        const [appMod, firestoreMod, authMod] = await Promise.all([
           import('https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js'),
-          import('https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js')
+          import('https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js'),
+          import('https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js')
         ]);
 
-        const app = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
-        fbDb = getFirestore(app);
-        fbSetDoc = setDoc;
-        fbDoc = doc;
-        fbOnSnapshot = onSnapshot;
+        const app = appMod.getApps().length ? appMod.getApps()[0] : appMod.initializeApp(FIREBASE_CONFIG);
+        fbDb = firestoreMod.getFirestore(app);
+        fbFirestoreMod = firestoreMod;
+        fbAuth = authMod.getAuth(app);
+        fbAuthMod = authMod;
+
+        // Listen for persistent Coach Login state
+        authMod.onAuthStateChanged(fbAuth, async (user) => {
+          currentCoachUser = user || null;
+          renderCoachAuthButton();
+          if (user && isHeadCoach()) {
+            await syncCoachOwnedTeams(user);
+          }
+        });
 
         subscribeToActiveTeamCloud();
       } catch (err) {
@@ -1062,19 +1249,158 @@
       }
     }
 
+    function renderCoachAuthButton() {
+      const btn = document.getElementById('coachAuthBtn');
+      const lbl = document.getElementById('coachAuthBtnLabel');
+      const signedInSec = document.getElementById('authSignedInSection');
+      const signedOutSec = document.getElementById('authSignedOutSection');
+      const emailLbl = document.getElementById('authUserEmailLabel');
+
+      if (!btn || !lbl) return;
+
+      if (!isHeadCoach()) {
+        btn.classList.add('hidden');
+        return;
+      }
+      btn.classList.remove('hidden');
+
+      if (currentCoachUser) {
+        const shortName = currentCoachUser.displayName
+          ? currentCoachUser.displayName.split(' ')[0]
+          : (currentCoachUser.email ? currentCoachUser.email.split('@')[0] : 'Coach');
+        lbl.textContent = `👤 ${shortName}`;
+        btn.className = 'px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition flex items-center gap-1';
+
+        if (signedInSec && signedOutSec) {
+          signedInSec.classList.remove('hidden');
+          signedOutSec.classList.add('hidden');
+          emailLbl.textContent = currentCoachUser.email || currentCoachUser.displayName || 'Coach Account';
+        }
+      } else {
+        lbl.textContent = '🔑 Login';
+        btn.className = 'px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center gap-1';
+
+        if (signedInSec && signedOutSec) {
+          signedInSec.classList.add('hidden');
+          signedOutSec.classList.remove('hidden');
+        }
+      }
+    }
+
+    async function syncCoachOwnedTeams(user) {
+      if (!fbDb || !fbFirestoreMod || !user) return;
+      try {
+        // 1. Tag any existing local teams on this device with the coach's UID and push to cloud
+        for (const t of appStore.teams) {
+          if (!t.ownerUid && t.players && t.players.length > 0) {
+            t.ownerUid = user.uid;
+            t.ownerEmail = user.email || '';
+            const ref = fbFirestoreMod.doc(fbDb, 'sideline_pro_teams', t.id);
+            await fbFirestoreMod.setDoc(ref, JSON.parse(JSON.stringify({ ...t, updatedAt: Date.now() })), { merge: true });
+          }
+        }
+
+        // 2. Pull any teams owned by this coach from other devices
+        const q = fbFirestoreMod.query(
+          fbFirestoreMod.collection(fbDb, 'sideline_pro_teams'),
+          fbFirestoreMod.where('ownerUid', '==', user.uid)
+        );
+        const snap = await fbFirestoreMod.getDocs(q);
+        let addedAny = false;
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && data.id) {
+            const exists = appStore.teams.some(t => t.id === data.id);
+            if (!exists) {
+              appStore.teams.push(normalizeTeamObject(data));
+              addedAny = true;
+            }
+          }
+        });
+
+        if (addedAny) {
+          syncActiveTeamPointer();
+          saveState(false);
+          renderAll();
+        }
+      } catch (e) {
+        console.warn('Could not sync coach owned teams:', e);
+      }
+    }
+
+    function openCoachAuthModal() {
+      const errEl = document.getElementById('authErrorMsg');
+      if (errEl) errEl.classList.add('hidden');
+      renderCoachAuthButton();
+      document.getElementById('coachAuthModal').classList.remove('hidden');
+    }
+
+    function closeCoachAuthModal() {
+      document.getElementById('coachAuthModal').classList.add('hidden');
+    }
+
+    function showAuthError(msg) {
+      const errEl = document.getElementById('authErrorMsg');
+      if (!errEl) return;
+      errEl.textContent = msg;
+      errEl.classList.remove('hidden');
+    }
+
+    async function handleGoogleCoachLogin() {
+      if (!fbAuth || !fbAuthMod) {
+        showAuthError('Firebase Authentication is still initializing. Try again in a moment.');
+        return;
+      }
+      try {
+        const provider = new fbAuthMod.GoogleAuthProvider();
+        await fbAuthMod.signInWithPopup(fbAuth, provider);
+        closeCoachAuthModal();
+      } catch (err) {
+        showAuthError(err.message || 'Google Sign-In failed. Ensure Google Sign-In is enabled in your Firebase Console.');
+      }
+    }
+
+    async function handleEmailCoachAuth(mode) {
+      if (!fbAuth || !fbAuthMod) {
+        showAuthError('Firebase Authentication is not ready.');
+        return;
+      }
+      const email = (document.getElementById('authEmailInput').value || '').trim();
+      const pass = document.getElementById('authPasswordInput').value || '';
+      if (!email || pass.length < 6) {
+        showAuthError('Please enter a valid email and a password of at least 6 characters.');
+        return;
+      }
+      try {
+        if (mode === 'register') {
+          await fbAuthMod.createUserWithEmailAndPassword(fbAuth, email, pass);
+        } else {
+          await fbAuthMod.signInWithEmailAndPassword(fbAuth, email, pass);
+        }
+        closeCoachAuthModal();
+      } catch (err) {
+        showAuthError(err.message || 'Authentication failed. Check your email/password or enable Email/Password Auth in Firebase Console.');
+      }
+    }
+
+    async function handleCoachSignOut() {
+      if (!fbAuth || !fbAuthMod) return;
+      await fbAuthMod.signOut(fbAuth);
+      renderCoachAuthButton();
+    }
+
     function subscribeToActiveTeamCloud() {
-      if (!fbDb || !fbOnSnapshot || !fbDoc || !state.id) return;
+      if (!fbDb || !fbFirestoreMod || !state.id) return;
       if (activeUnsubscribe) activeUnsubscribe();
 
-      const teamRef = fbDoc(fbDb, 'sideline_pro_teams', state.id);
+      const teamRef = fbFirestoreMod.doc(fbDb, 'sideline_pro_teams', state.id);
 
-      activeUnsubscribe = fbOnSnapshot(teamRef, (snap) => {
+      activeUnsubscribe = fbFirestoreMod.onSnapshot(teamRef, (snap) => {
         if (snap.exists()) {
           const cloudData = snap.data();
 
-          // If Assistant Coach opened link, verify PIN matches
           if (appRole === 'assistant' && cloudData.editPin && urlPinParam !== String(cloudData.editPin)) {
-            appRole = 'viewer'; // Downgrade to read-only viewer if PIN is invalid
+            appRole = 'viewer';
           }
 
           isReceivingCloudSnapshot = true;
@@ -1105,17 +1431,127 @@
       });
     }
 
-    async function pushActiveTeamToCloud() {
-      if (!fbDb || !fbSetDoc || !fbDoc || isReceivingCloudSnapshot || !canEditGame()) return;
+    async function pushActiveTeamToCloud(allowParentRsvp = false) {
+      if (!fbDb || !fbFirestoreMod || isReceivingCloudSnapshot) return;
+      if (!canEditGame() && !allowParentRsvp) return;
+
       try {
-        const teamRef = fbDoc(fbDb, 'sideline_pro_teams', state.id);
+        if (currentCoachUser && isHeadCoach() && !state.ownerUid) {
+          state.ownerUid = currentCoachUser.uid;
+          state.ownerEmail = currentCoachUser.email || '';
+        }
+        const teamRef = fbFirestoreMod.doc(fbDb, 'sideline_pro_teams', state.id);
         const payload = JSON.parse(JSON.stringify({
           ...getSerializablePayload(),
           updatedAt: Date.now()
         }));
-        await fbSetDoc(teamRef, payload, { merge: true });
+        await fbFirestoreMod.setDoc(teamRef, payload, { merge: true });
       } catch (err) {
         console.warn('Failed to push update to Firestore:', err);
+      }
+    }
+
+    // =========================================================================
+    // 1-TAP PARENT IDENTITY & GAME RSVP LOGIC
+    // =========================================================================
+    function getParentIdentityKey() {
+      return `sideline_parent_player_${state.id}`;
+    }
+
+    function getSelectedParentPlayerId() {
+      try {
+        return localStorage.getItem(getParentIdentityKey());
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function selectParentIdentity(playerId) {
+      try {
+        localStorage.setItem(getParentIdentityKey(), playerId);
+      } catch (e) {}
+      renderParentRsvpCard();
+    }
+
+    function clearParentIdentity() {
+      try {
+        localStorage.removeItem(getParentIdentityKey());
+      } catch (e) {}
+      renderParentRsvpCard();
+    }
+
+    function submitParentRsvp(status) {
+      const pid = getSelectedParentPlayerId();
+      const player = state.players.find(p => p.id === pid);
+      if (!player) return;
+
+      player.rsvp = status; // 'going' | 'late' | 'out'
+      player.present = status !== 'out';
+
+      // Recompute rotation and push parent RSVP to cloud
+      recalculateSchedule(false);
+      pushActiveTeamToCloud(true);
+      renderAll();
+    }
+
+    function renderParentRsvpCard() {
+      const card = document.getElementById('parentRsvpCard');
+      if (!card) return;
+
+      if (appRole !== 'viewer' || state.players.length === 0) {
+        card.classList.add('hidden');
+        return;
+      }
+      card.classList.remove('hidden');
+
+      const selectedPid = getSelectedParentPlayerId();
+      const selectedPlayer = state.players.find(p => p.id === selectedPid);
+
+      const pickerEl = document.getElementById('parentPlayerPicker');
+      const actionsEl = document.getElementById('parentRsvpActions');
+      const switchBtn = document.getElementById('switchParentPlayerBtn');
+      const subtext = document.getElementById('parentRsvpSubtext');
+
+      if (!selectedPlayer) {
+        switchBtn.classList.add('hidden');
+        actionsEl.classList.add('hidden');
+        pickerEl.classList.remove('hidden');
+        subtext.textContent = 'Which player are you here for? Tap once to remember on your phone:';
+
+        const sorted = getSortedRosterList(state.players);
+        pickerEl.innerHTML = sorted.map(p => `
+          <button onclick="selectParentIdentity('${p.id}')"
+            class="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-950 hover:bg-sky-500/20 text-sky-200 border border-sky-500/30 transition active:scale-95">
+            ${escapeHtml(formatPlayerBadge(p))}
+          </button>
+        `).join('');
+      } else {
+        switchBtn.classList.remove('hidden');
+        pickerEl.classList.add('hidden');
+        actionsEl.classList.remove('hidden');
+
+        const curRsvp = selectedPlayer.rsvp || (selectedPlayer.present ? 'going' : 'out');
+        subtext.innerHTML = `Checking in for <strong class="text-white">${escapeHtml(formatPlayerBadge(selectedPlayer))}</strong>:`;
+
+        const btnGoing = document.getElementById('rsvpBtnGoing');
+        const btnLate = document.getElementById('rsvpBtnLate');
+        const btnOut = document.getElementById('rsvpBtnOut');
+
+        btnGoing.className = `py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5 ${
+          curRsvp === 'going'
+            ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-lg'
+            : 'bg-slate-950 text-slate-300 border-slate-800'
+        }`;
+        btnLate.className = `py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5 ${
+          curRsvp === 'late'
+            ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg'
+            : 'bg-slate-950 text-slate-300 border-slate-800'
+        }`;
+        btnOut.className = `py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5 ${
+          curRsvp === 'out'
+            ? 'bg-rose-500 text-white border-rose-400 shadow-lg'
+            : 'bg-slate-950 text-slate-300 border-slate-800'
+        }`;
       }
     }
 
@@ -1154,31 +1590,6 @@
     }
 
     // =========================================================================
-    // NUMBER FORMATTING & SORT HELPERS
-    // =========================================================================
-    function fmtNum(val) {
-      const n = Math.round((Number(val) || 0) * 100) / 100;
-      return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
-    }
-
-    function comparePlayerNumbers(a, b) {
-      const numA = parseInt(a.number, 10);
-      const numB = parseInt(b.number, 10);
-      const validA = !isNaN(numA);
-      const validB = !isNaN(numB);
-      if (validA && validB) {
-        if (numA !== numB) return numA - numB;
-      } else if (validA !== validB) {
-        return validA ? -1 : 1;
-      }
-      return (a.name || '').localeCompare(b.name || '');
-    }
-
-    function getShiftQuarterWeight(shiftsPerQuarter = state.shiftsPerQuarter) {
-      return shiftsPerQuarter === 1 ? 1.0 : 0.5;
-    }
-
-    // =========================================================================
     // FEEDBACK FORM EMBED TOGGLE
     // =========================================================================
     function toggleFeedbackEmbed() {
@@ -1206,6 +1617,7 @@
       const base = createBlankTeam(rawTeam.teamName || 'My Team');
       const merged = { ...base, ...rawTeam };
 
+      merged.quarterMins = parseFloat(rawTeam.quarterMins) || 8;
       merged.editPin = String(rawTeam.editPin || base.editPin);
       merged.rosterSort = rawTeam.rosterSort || 'order';
       merged.balanceSort = rawTeam.balanceSort || { col: 'order', dir: 'asc' };
@@ -1232,6 +1644,7 @@
         return {
           ...p,
           number: p.number || '',
+          rsvp: p.rsvp || null,
           prior
         };
       });
@@ -1248,7 +1661,7 @@
         quarter: 1,
         running: false,
         endTimeMs: null,
-        remainingSec: (merged.quarterMins || 8) * 60,
+        remainingSec: getQuarterTotalSeconds(merged.quarterMins),
         midAlertFired: false,
         ...(rawTeam.timerSync || {})
       };
@@ -1312,6 +1725,10 @@
       }
       const cleanName = entered.trim() || defaultName;
       const newTeam = createBlankTeam(cleanName);
+      if (currentCoachUser) {
+        newTeam.ownerUid = currentCoachUser.uid;
+        newTeam.ownerEmail = currentCoachUser.email || '';
+      }
       appStore.teams.push(newTeam);
       appStore.activeTeamId = newTeam.id;
       state = newTeam;
@@ -1343,6 +1760,8 @@
       return {
         id: state.id,
         editPin: state.editPin,
+        ownerUid: state.ownerUid || null,
+        ownerEmail: state.ownerEmail || null,
         v5QuarterScale: true,
         teamName: state.teamName,
         trackPositions: state.trackPositions,
@@ -1392,13 +1811,13 @@
 
       const baseUrl = window.location.origin + window.location.pathname;
       let roleUrl = `${baseUrl}?team=${encodeURIComponent(state.id)}&role=viewer`;
-      let shareTitle = `${state.teamName} — Live Game & Sub Tracker (Parent View)`;
-      let shareText = `Watch ${state.teamName}'s live score, clock, and player rotations here:`;
+      let shareTitle = `${state.teamName}: Live Game & Sub Tracker (Parent View)`;
+      let shareText = `Check in for ${state.teamName} and watch our live score, clock, and player rotations here:`;
       let btnId = 'shareViewerBtn';
 
       if (targetRole === 'assistant') {
         roleUrl = `${baseUrl}?team=${encodeURIComponent(state.id)}&role=assistant&pin=${encodeURIComponent(state.editPin)}`;
-        shareTitle = `${state.teamName} — Assistant Coach Live Editor`;
+        shareTitle = `${state.teamName}: Assistant Coach Live Editor`;
         shareText = `Co-manage ${state.teamName}'s live score, timer, and substitutions here:`;
         btnId = 'shareAssistantBtn';
       }
@@ -1541,16 +1960,20 @@
           const candidates = presentPlayers.map((p, idx) => {
             const satPrev = prevShift ? prevShift.benchIds.includes(p.id) : false;
             const totalBench = (p.prior.BENCH || 0) + runningCounts[p.id].BENCH;
+            // If parent marked "Running Late" (rsvp === 'late'), prioritize sitting them in Q1 Shift 1
+            const isLateFirstShift = (s === 0 && p.rsvp === 'late');
             return {
               id: p.id,
               idx,
               satPrev,
+              isLateFirstShift,
               gameBench: runningCounts[p.id].BENCH,
               totalBench
             };
           });
 
           candidates.sort((a, b) => {
+            if (a.isLateFirstShift !== b.isLateFirstShift) return a.isLateFirstShift ? -1 : 1;
             if (a.satPrev !== b.satPrev) return a.satPrev ? 1 : -1;
             if (Math.abs(a.totalBench - b.totalBench) > 0.01) return a.totalBench - b.totalBench;
             if (Math.abs(a.gameBench - b.gameBench) > 0.01) return a.gameBench - b.gameBench;
@@ -1659,7 +2082,7 @@
       if (state.shiftsPerQuarter === 1) {
         return state.computedShifts.find(s => s.quarter === q && s.part === 1) || state.computedShifts[0];
       }
-      const midSec = Math.floor((state.quarterMins * 60) / 2);
+      const midSec = getQuarterMidSeconds(state.quarterMins);
       const activePart = (state.fullQuarterLocks[q] || timer.secondsLeft > midSec) ? 1 : 2;
       return state.computedShifts.find(s => s.quarter === q && s.part === activePart) || state.computedShifts[0];
     }
@@ -1669,8 +2092,10 @@
     // =========================================================================
     function renderAll() {
       renderRolePermissionsUI();
+      renderCoachAuthButton();
       renderTabsAndOnboarding();
       renderHeaderAndSettings();
+      renderParentRsvpCard();
       renderScoreboard();
       renderTimerUI();
       renderAttendance();
@@ -1698,7 +2123,7 @@
 
       if (appRole === 'viewer') {
         banner.className = 'px-4 py-1.5 text-xs font-extrabold text-center bg-sky-500/20 text-sky-200 border-b border-sky-500/30';
-        banner.innerHTML = '👀 LIVE PARENT VIEWER MODE — Real-time updates from the sideline (Read-Only)';
+        banner.innerHTML = '👀 LIVE PARENT VIEWER MODE: Check in your player below & watch live updates';
         banner.classList.remove('hidden');
 
         teamSelect.classList.add('hidden');
@@ -1717,12 +2142,12 @@
         smsSection.classList.add('hidden');
         completeGameSection.classList.add('hidden');
 
-        document.getElementById('rollCallHeaderTitle').textContent = '📋 Active Match Roster';
+        document.getElementById('rollCallHeaderTitle').textContent = '📋 Active Match Roster & RSVP Status';
         document.getElementById('scheduleSubHint').textContent = 'Active shift highlighted in green';
         document.getElementById('historySubHint').textContent = 'Tap any match card to view the box score';
       } else if (appRole === 'assistant') {
         banner.className = 'px-4 py-1.5 text-xs font-extrabold text-center bg-amber-500/20 text-amber-200 border-b border-amber-500/30';
-        banner.innerHTML = '🧢 ASSISTANT COACH MODE — Live Sideline Score, Timer & Sub Editor';
+        banner.innerHTML = '🧢 ASSISTANT COACH MODE: Live Sideline Score, Timer & Sub Editor';
         banner.classList.remove('hidden');
 
         teamSelect.classList.add('hidden');
@@ -1787,19 +2212,32 @@
 
       const preset = FORMATION_PRESETS[state.formationKey];
       const formLabel = preset ? preset.label : `${getTotalFieldSlots()}v${getTotalFieldSlots()}`;
-      document.getElementById('formatSummaryLabel').textContent = `${formLabel} • ${state.quarterMins}m Qtrs`;
+      document.getElementById('formatSummaryLabel').textContent = `${formLabel} • ${fmtDurationLabel(state.quarterMins)} Qtrs`;
 
       const posBtn = document.getElementById('posToggleBtn');
       if (state.trackPositions) {
-        posBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
-        posBtn.innerHTML = '<span>📍 Pos: ON</span>';
+        posBtn.className = 'px-2 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+        posBtn.innerHTML = '<span>📍 Pos</span>';
       } else {
-        posBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1 bg-slate-800 text-slate-400 border-slate-700';
-        posBtn.innerHTML = '<span>📍 Pos: OFF</span>';
+        posBtn.className = 'px-2 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1 bg-slate-800 text-slate-400 border-slate-700';
+        posBtn.innerHTML = '<span>📍 Off</span>';
       }
 
       document.getElementById('formationPresetSelect').value = state.formationKey;
-      document.getElementById('quarterMinsSelect').value = String(state.quarterMins);
+
+      // Sync Quarter Mins Select + Custom Input
+      const qSelect = document.getElementById('quarterMinsSelect');
+      const customInput = document.getElementById('customQuarterMinsInput');
+      const isPreset = PRESET_QUARTER_VALUES.includes(Number(state.quarterMins));
+      if (isPreset && qSelect.value !== 'custom') {
+        qSelect.value = String(Number(state.quarterMins));
+        customInput.classList.add('hidden');
+      } else {
+        qSelect.value = 'custom';
+        customInput.value = state.quarterMins;
+        customInput.classList.remove('hidden');
+      }
+
       document.getElementById('shiftsPerQtrSelect').value = String(state.shiftsPerQuarter);
 
       document.getElementById('slotCountFWD').textContent = state.slots.FWD;
@@ -2047,12 +2485,17 @@
       container.innerHTML = sortedPlayers.map(p => {
         const badge = formatPlayerBadge(p);
         const clickAttr = editable ? `onclick="togglePlayerPresence('${p.id}')"` : '';
+        const rsvpTag = p.rsvp === 'late'
+          ? `<span class="ml-1 px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-200 text-[10px] font-extrabold">⏳ Late</span>`
+          : (p.rsvp === 'going' && p.present ? `<span class="text-[10px] text-emerald-300">✓</span>` : '');
+
         if (p.present) {
           return `
             <button ${clickAttr}
               class="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm transition ${editable ? 'active:scale-95' : 'cursor-default'}">
-              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span class="w-2 h-2 rounded-full ${p.rsvp === 'late' ? 'bg-amber-400' : 'bg-emerald-400'}"></span>
               <span>${escapeHtml(badge)}</span>
+              ${rsvpTag}
             </button>
           `;
         } else {
@@ -2070,7 +2513,8 @@
     function renderScheduleGrid() {
       const grid = document.getElementById('scheduleGrid');
       const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
-      const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
+      const shiftDurLabel = fmtDurationLabel(state.quarterMins / state.shiftsPerQuarter);
+      const qtrDurLabel = fmtDurationLabel(state.quarterMins);
       const activeShift = getActiveShiftObject();
       const editable = canEditGame();
 
@@ -2100,7 +2544,7 @@
                   }">
                   Quarter ${q}
                 </button>
-                <span class="text-[11px] text-slate-400">${state.quarterMins}m</span>
+                <span class="text-[11px] text-slate-400">${qtrDurLabel}</span>
                 ${isActiveQuarter ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/40">🟢 ACTIVE</span>` : ''}
               </div>
               ${state.shiftsPerQuarter === 2 && editable ? `
@@ -2119,8 +2563,8 @@
               ${visibleShifts.map(shift => {
                 const benchNames = shift.benchIds.map(id => playerMap[id] || '').filter(Boolean);
                 const shiftLabel = isFullQtr
-                  ? `Full Quarter (${state.quarterMins}m • 1.0 Qtr)`
-                  : (shift.part === 1 ? `1st ${shiftMins}m (0.5 Qtr)` : `2nd ${shiftMins}m (0.5 Qtr)`);
+                  ? `Full Quarter (${qtrDurLabel} • 1.0 Qtr)`
+                  : (shift.part === 1 ? `1st ${shiftDurLabel} (0.5 Qtr)` : `2nd ${shiftDurLabel} (0.5 Qtr)`);
 
                 const isShiftActive = isActiveQuarter && (
                   isFullQtr || (activeShift && activeShift.index === shift.index)
@@ -2462,6 +2906,12 @@
 
       presentPlayers.forEach(p => {
         p.prior.gamesPlayed = (p.prior.gamesPlayed || 0) + 1;
+      });
+
+      // Reset per-game RSVP flags for next week
+      state.players.forEach(p => {
+        p.rsvp = null;
+        p.present = true;
       });
 
       const formattedGoals = (state.currentMatch.goals || []).map(g => {
@@ -2986,11 +3436,12 @@
         positions: { ...shift.positions }
       };
 
-      const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
+      const shiftDurLabel = fmtDurationLabel(state.quarterMins / state.shiftsPerQuarter);
+      const qtrDurLabel = fmtDurationLabel(state.quarterMins);
       const isFullQtr = state.shiftsPerQuarter === 1 || !!state.fullQuarterLocks[shift.quarter];
       const partLabel = isFullQtr
-        ? `Full ${state.quarterMins}m`
-        : (shift.part === 1 ? `1st ${shiftMins}m` : `2nd ${shiftMins}m`);
+        ? `Full ${qtrDurLabel}`
+        : (shift.part === 1 ? `1st ${shiftDurLabel}` : `2nd ${shiftDurLabel}`);
 
       document.getElementById('modalTitle').textContent = `Edit Quarter ${shift.quarter} • ${partLabel}`;
       document.getElementById('editModal').classList.remove('hidden');
@@ -3086,7 +3537,7 @@
     }
 
     // =========================================================================
-    // ROSTER, ATTENDANCE & FORMAT HANDLERS
+    // ROSTER, ATTENDANCE & FORMAT HANDLERS (12.5m & CUSTOM TIME SUPPORT)
     // =========================================================================
     function addPlayerFromOnboarding() {
       if (!isHeadCoach()) return;
@@ -3107,6 +3558,7 @@
         name,
         number,
         present: true,
+        rsvp: null,
         prior: { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 }
       });
 
@@ -3130,6 +3582,7 @@
         name,
         number,
         present: true,
+        rsvp: null,
         prior: { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 }
       });
       numInput.value = '';
@@ -3183,6 +3636,7 @@
       const p = state.players.find(x => x.id === playerId);
       if (p) {
         p.present = !p.present;
+        p.rsvp = p.present ? 'going' : 'out';
         recalculateSchedule();
         renderAll();
       }
@@ -3190,7 +3644,10 @@
 
     function setAllAttendance(val) {
       if (!canEditGame()) return;
-      state.players.forEach(p => { p.present = val; });
+      state.players.forEach(p => {
+        p.present = val;
+        p.rsvp = val ? 'going' : 'out';
+      });
       recalculateSchedule();
       renderAll();
     }
@@ -3224,9 +3681,38 @@
       renderAll();
     }
 
+    function handleQuarterSelectChange(val) {
+      if (!isHeadCoach()) return;
+      const customInput = document.getElementById('customQuarterMinsInput');
+      if (val === 'custom') {
+        customInput.value = state.quarterMins;
+        customInput.classList.remove('hidden');
+        customInput.focus();
+      } else {
+        customInput.classList.add('hidden');
+        const parsed = parseFloat(val);
+        if (!isNaN(parsed) && parsed > 0) {
+          state.quarterMins = parsed;
+          resetTimer(false);
+          recalculateSchedule();
+          renderAll();
+        }
+      }
+    }
+
+    function handleCustomQuarterInput(val) {
+      if (!isHeadCoach()) return;
+      const parsed = parseFloat(val);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 60) {
+        state.quarterMins = Math.round(parsed * 100) / 100;
+        resetTimer(false);
+        recalculateSchedule();
+        renderAll();
+      }
+    }
+
     function handleTimingChange() {
       if (!isHeadCoach()) return;
-      const newQuarterMins = parseInt(document.getElementById('quarterMinsSelect').value, 10) || 8;
       const newShiftsPerQtr = parseInt(document.getElementById('shiftsPerQtrSelect').value, 10) || 2;
       const oldShiftsPerQtr = state.shiftsPerQuarter;
 
@@ -3257,7 +3743,6 @@
         state.lockedShifts = preservedLocks;
       }
 
-      state.quarterMins = newQuarterMins;
       state.shiftsPerQuarter = newShiftsPerQtr;
       resetTimer(false);
       recalculateSchedule();
@@ -3344,7 +3829,9 @@
         }
       } else {
         timer.running = false;
-        timer.secondsLeft = typeof ts.remainingSec === 'number' ? ts.remainingSec : (state.quarterMins * 60);
+        timer.secondsLeft = typeof ts.remainingSec === 'number'
+          ? ts.remainingSec
+          : getQuarterTotalSeconds(state.quarterMins);
       }
     }
 
@@ -3366,10 +3853,11 @@
       const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
       const benchNames = activeShift.benchIds.map(id => playerMap[id]).filter(Boolean);
       const isFullQtr = isCurrentQuarterFullSub();
-      const shiftMins = Math.round(state.quarterMins / state.shiftsPerQuarter);
+      const shiftDurLabel = fmtDurationLabel(state.quarterMins / state.shiftsPerQuarter);
+      const qtrDurLabel = fmtDurationLabel(state.quarterMins);
       const shiftDesc = isFullQtr
-        ? `Q${timer.quarter} • Full Quarter (${state.quarterMins}m)`
-        : `Q${timer.quarter} • ${activeShift.part === 1 ? '1st' : '2nd'} Shift (${shiftMins}m)`;
+        ? `Q${timer.quarter} • Full Quarter (${qtrDurLabel})`
+        : `Q${timer.quarter} • ${activeShift.part === 1 ? '1st' : '2nd'} Shift (${shiftDurLabel})`;
 
       const posGroups = { FWD: [], MID: [], DEF: [], GK: [] };
       const allFieldNames = [];
@@ -3386,7 +3874,7 @@
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-300">Currently In Play — ${shiftDesc}</span>
+              <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-300">Currently In Play: ${shiftDesc}</span>
             </div>
             ${canEditGame() ? `
               <button onclick="openEditModal(${activeShift.index})" class="text-[11px] font-semibold text-emerald-400 hover:underline">
@@ -3441,8 +3929,8 @@
     }
 
     function renderTimerUI() {
-      const totalSec = state.quarterMins * 60;
-      const midSec = Math.floor(totalSec / 2);
+      const totalSec = getQuarterTotalSeconds(state.quarterMins);
+      const midSec = getQuarterMidSeconds(state.quarterMins);
       const mins = Math.floor(timer.secondsLeft / 60);
       const secs = timer.secondsLeft % 60;
 
@@ -3481,8 +3969,8 @@
         splitProgress.classList.remove('hidden');
         singleProgress.classList.add('hidden');
 
-        const p1 = isFirstHalf ? ((timer.secondsLeft - midSec) / midSec) * 100 : 0;
-        const p2 = isFirstHalf ? 100 : (timer.secondsLeft / midSec) * 100;
+        const p1 = isFirstHalf ? ((timer.secondsLeft - midSec) / Math.max(1, totalSec - midSec)) * 100 : 0;
+        const p2 = isFirstHalf ? 100 : (timer.secondsLeft / Math.max(1, midSec)) * 100;
         document.getElementById('progressHalf1').style.width = `${Math.max(0, Math.min(100, p1))}%`;
         document.getElementById('progressHalf2').style.width = `${Math.max(0, Math.min(100, p2))}%`;
       } else {
@@ -3491,7 +3979,7 @@
         splitProgress.classList.add('hidden');
         singleProgress.classList.remove('hidden');
 
-        const pct = (timer.secondsLeft / totalSec) * 100;
+        const pct = (timer.secondsLeft / Math.max(1, totalSec)) * 100;
         document.getElementById('progressFullBar').style.width = `${Math.max(0, Math.min(100, pct))}%`;
       }
 
@@ -3518,7 +4006,7 @@
         timer.secondsLeft--;
       }
 
-      const midSec = Math.floor((state.quarterMins * 60) / 2);
+      const midSec = getQuarterMidSeconds(state.quarterMins);
 
       if (!isCurrentQuarterFullSub() && timer.secondsLeft <= midSec && !timer.midAlertFired) {
         timer.midAlertFired = true;
@@ -3552,7 +4040,7 @@
 
     function adjustTimer(deltaSec) {
       if (!canEditGame()) return;
-      const maxSec = state.quarterMins * 60;
+      const maxSec = getQuarterTotalSeconds(state.quarterMins);
       timer.secondsLeft = Math.max(0, Math.min(maxSec, timer.secondsLeft + deltaSec));
       syncTimerToStateAndCloud();
       renderTimerUI();
@@ -3561,7 +4049,7 @@
 
     function syncMidQuarter() {
       if (!canEditGame() || isCurrentQuarterFullSub()) return;
-      timer.secondsLeft = Math.floor((state.quarterMins * 60) / 2);
+      timer.secondsLeft = getQuarterMidSeconds(state.quarterMins);
       timer.midAlertFired = true;
       syncTimerToStateAndCloud();
       showSubAlert(timer.quarter, 2);
@@ -3572,7 +4060,7 @@
     function resetTimer(syncToCloud = true) {
       clearInterval(timer.intervalId);
       timer.running = false;
-      timer.secondsLeft = state.quarterMins * 60;
+      timer.secondsLeft = getQuarterTotalSeconds(state.quarterMins);
       timer.midAlertFired = false;
       if (syncToCloud && canEditGame()) {
         syncTimerToStateAndCloud();
@@ -3655,6 +4143,14 @@
     // Expose functions to global window object for inline onclick handlers
     Object.assign(window, {
       triggerPwaInstall,
+      openCoachAuthModal,
+      closeCoachAuthModal,
+      handleGoogleCoachLogin,
+      handleEmailCoachAuth,
+      handleCoachSignOut,
+      selectParentIdentity,
+      clearParentIdentity,
+      submitParentRsvp,
       openInviteModal,
       closeInviteModal,
       shareRoleLink,
@@ -3666,6 +4162,8 @@
       switchMainTab,
       updateTeamName,
       handleFormationChange,
+      handleQuarterSelectChange,
+      handleCustomQuarterInput,
       handleTimingChange,
       adjustSlot,
       resetSeasonHistory,
