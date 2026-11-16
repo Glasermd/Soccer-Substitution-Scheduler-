@@ -1,5 +1,5 @@
 // ============================================================================
-// app.js — UI Renderers, Modals, Event Controllers & PWA Lifecycle
+// app.js — UI Renderer, Staged Sub Alerts, Modals & Event Controllers
 // ============================================================================
 
 import {
@@ -27,7 +27,6 @@ import {
   syncActiveTeamPointer,
   saveState,
   getTotalFieldSlots,
-  computeEffectivePriorBenchMap,
   recalculateSchedule,
   isQuarterFullSub,
   getActiveShiftObject,
@@ -52,6 +51,7 @@ import {
   appRole,
   canEditGame,
   isHeadCoach,
+  getCurrentCoachUser,
   initFirebaseConnection,
   renderCoachAuthButton,
   openCoachAuthModal,
@@ -66,45 +66,66 @@ import {
   shareRoleLink
 } from './cloud.js';
 
+// Local UI & Modal Draft State
+let currentActiveTab = 'game';
+let editingShiftIdx = null;
+let modalDraft = { benchIds: [], positions: {} };
+let goalDraft = { scorerId: null, assistId: null };
+let editingHistoryGameId = null;
+let histDraft = null;
+let deferredInstallPrompt = null;
+
+// Register callbacks with engine.js
+registerEngineCallbacks({
+  onRenderAll: renderAll,
+  onCanEdit: canEditGame
+});
+
 // ============================================================================
-// LOCAL UI & MODAL DRAFT STATE
+// INITIALIZATION & PWA INSTALL SUPPORT
 // ============================================================================
-let currentMainTab = 'game';
-let viewedShiftPartOverride = null; // Allows inspecting Part 1 or Part 2 when previewing a quarter
-let deferredPwaPrompt = null;
-
-// Goal Modal Draft
-let goalDraft = {
-  scorerId: null,
-  assistId: null
-};
-
-// Shift Override Modal Draft
-let modalDraft = {
-  shiftIndex: null,
-  benchIds: [],
-  positions: {}
-};
-
-// Past Game History Detail Modal Draft
-let histModalDraft = null;
-
-// Parent Identity LocalStorage Helper
-function getParentStorageKey() {
-  return `sideline_pro_parent_player_${state.id}`;
+function initPwaSupport() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    const btn = document.getElementById('pwaInstallBtn');
+    if (btn) {
+      btn.classList.remove('hidden');
+      btn.classList.add('flex');
+    }
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    const btn = document.getElementById('pwaInstallBtn');
+    if (btn) btn.classList.add('hidden');
+  });
 }
 
-// ============================================================================
-// INITIALIZATION & STORAGE BOOTSTRAP
-// ============================================================================
-function loadFromLocalStorage() {
+async function triggerPwaInstall() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    document.getElementById('pwaInstallBtn').classList.add('hidden');
+  } else {
+    alert('To install as a full-screen app: open your browser menu (⋮ or Share ↑) and tap "Install app" or "Add to Home Screen".');
+  }
+}
+
+function loadState() {
+  initPwaSupport();
+  currentActiveTab = 'game';
+
   try {
     const rawMulti = localStorage.getItem(MULTI_TEAM_STORAGE_KEY);
     if (rawMulti) {
-      const parsed = JSON.parse(rawMulti);
-      if (parsed && Array.isArray(parsed.teams) && parsed.teams.length > 0) {
-        appStore.teams = parsed.teams.map(t => normalizeTeamObject(t));
-        appStore.activeTeamId = parsed.activeTeamId || appStore.teams[0].id;
+      const parsedMulti = JSON.parse(rawMulti);
+      if (parsedMulti && Array.isArray(parsedMulti.teams) && parsedMulti.teams.length > 0) {
+        appStore.teams = parsedMulti.teams.map(normalizeTeamObject);
+        appStore.activeTeamId = parsedMulti.activeTeamId || appStore.teams[0].id;
       }
     } else {
       const rawLegacy = localStorage.getItem(LEGACY_STORAGE_KEY);
@@ -115,254 +136,134 @@ function loadFromLocalStorage() {
       }
     }
   } catch (e) {
-    console.warn('Error loading local state:', e);
+    console.warn('Could not load saved state:', e);
   }
 
-  // If opened via a shared ?team= link, ensure that team slot exists locally
   if (sharedTeamIdParam) {
-    let sharedTeam = appStore.teams.find(t => t.id === sharedTeamIdParam);
-    if (!sharedTeam) {
-      sharedTeam = createBlankTeam('Shared Team');
-      sharedTeam.id = sharedTeamIdParam;
-      appStore.teams.push(sharedTeam);
+    let existing = appStore.teams.find(t => t.id === sharedTeamIdParam);
+    if (!existing) {
+      existing = createBlankTeam('Loading Live Team...');
+      existing.id = sharedTeamIdParam;
+      appStore.teams.push(existing);
     }
-    appStore.activeTeamId = sharedTeamIdParam;
+    appStore.activeTeamId = existing.id;
   }
 
   syncActiveTeamPointer();
   applyCloudTimerState();
   recalculateSchedule(false);
+  renderAll();
+  initFirebaseConnection();
 }
 
 // ============================================================================
-// MASTER RENDER PIPELINE
+// MULTI-TEAM MANAGEMENT HANDLERS
 // ============================================================================
-export function renderAll() {
-  renderRolePermissionsUI();
-  renderHeaderAndSettings();
-  renderOnboardingCard();
+function handleTeamSelectChange(val) {
+  if (!isHeadCoach()) return;
+  if (val === '__ADD_NEW_TEAM__') {
+    createNewTeamPrompt();
+    return;
+  }
+  switchActiveTeam(val);
+}
+
+function switchActiveTeam(teamId) {
+  const target = appStore.teams.find(t => t.id === teamId);
+  if (!target) return;
+  appStore.activeTeamId = target.id;
+  setState(target);
+  applyCloudTimerState();
+  recalculateSchedule(false);
+  renderAll();
+  subscribeToActiveTeamCloud();
+}
+
+function createNewTeamPrompt() {
+  if (!isHeadCoach()) return;
+  const defaultName = `Team ${appStore.teams.length + 1}`;
+  const entered = prompt('Enter a name for the new team:', defaultName);
+  if (entered === null) {
+    renderHeaderAndSettings();
+    return;
+  }
+  const cleanName = entered.trim() || defaultName;
+  const newTeam = createBlankTeam(cleanName);
+  const coachUser = getCurrentCoachUser();
+  if (coachUser) {
+    newTeam.ownerUid = coachUser.uid;
+    newTeam.ownerEmail = coachUser.email || '';
+  }
+  appStore.teams.push(newTeam);
+  appStore.activeTeamId = newTeam.id;
+  setState(newTeam);
+  currentActiveTab = 'game';
+  resetTimer(false);
+  recalculateSchedule();
+  renderAll();
+  subscribeToActiveTeamCloud();
+}
+
+function deleteCurrentTeam() {
+  if (!isHeadCoach()) return;
+  if (appStore.teams.length <= 1) {
+    alert('You must have at least one team. To start fresh, you can remove players or reset counts.');
+    return;
+  }
+  const confirmDelete = confirm(`Delete "${state.teamName}" from your device?`);
+  if (!confirmDelete) return;
+
+  appStore.teams = appStore.teams.filter(t => t.id !== state.id);
+  appStore.activeTeamId = appStore.teams[0].id;
+  syncActiveTeamPointer();
+  resetTimer(false);
+  recalculateSchedule(false);
+  renderAll();
+  subscribeToActiveTeamCloud();
+}
+
+// ============================================================================
+// 1-TAP PARENT IDENTITY & GAME RSVP LOGIC
+// ============================================================================
+function getParentIdentityKey() {
+  return `sideline_parent_player_${state.id}`;
+}
+
+function getSelectedParentPlayerId() {
+  try {
+    return localStorage.getItem(getParentIdentityKey());
+  } catch (e) {
+    return null;
+  }
+}
+
+function selectParentIdentity(playerId) {
+  try {
+    localStorage.setItem(getParentIdentityKey(), playerId);
+  } catch (e) {}
   renderParentRsvpCard();
-  renderScoreboard();
-  renderTimerUI();
-  renderStagedAlertsUI();
-  renderLiveInPlayPanel();
-  renderAttendance();
-  renderScheduleGrid();
-  renderBalanceTable();
-  renderSmsBubbles();
-  renderStatsAndHistoryTab();
 }
 
-// ============================================================================
-// 1. ROLE PERMISSIONS & TOP BANNER
-// ============================================================================
-function renderRolePermissionsUI() {
-  const banner = document.getElementById('roleBanner');
-  const setupGearBtn = document.getElementById('setupGearBtn');
-  const teamSelect = document.getElementById('headerTeamSelect');
-  const staticTeamName = document.getElementById('headerStaticTeamName');
-  const smsCard = document.getElementById('smsSectionCard');
-  const completeCard = document.getElementById('completeGameSectionCard');
-
-  if (banner) {
-    if (appRole === 'assistant') {
-      banner.className = 'px-4 py-2 text-xs font-bold text-center border-b bg-amber-500/20 border-amber-500/40 text-amber-200';
-      banner.innerHTML = `🧢 <strong>Assistant Coach Mode:</strong> Live score, clock, attendance, and rotation edits sync in real time with the Head Coach.`;
-      banner.classList.remove('hidden');
-    } else if (appRole === 'viewer') {
-      banner.className = 'px-4 py-2 text-xs font-bold text-center border-b bg-sky-500/20 border-sky-500/40 text-sky-200';
-      banner.innerHTML = `👀 <strong>Parent Live Viewer:</strong> Watch real-time scores, clock, and rotations below, and check in your player above.`;
-      banner.classList.remove('hidden');
-    } else {
-      banner.classList.add('hidden');
-    }
-  }
-
-  if (setupGearBtn) {
-    setupGearBtn.classList.toggle('hidden', !isHeadCoach());
-  }
-
-  if (teamSelect && staticTeamName) {
-    if (isHeadCoach() && !sharedTeamIdParam) {
-      teamSelect.classList.remove('hidden');
-      staticTeamName.classList.add('hidden');
-    } else {
-      teamSelect.classList.add('hidden');
-      staticTeamName.classList.remove('hidden');
-      staticTeamName.textContent = state.teamName || 'My Team';
-    }
-  }
-
-  const editable = canEditGame();
-  if (smsCard) smsCard.classList.toggle('hidden', !editable);
-  if (completeCard) completeCard.classList.toggle('hidden', !editable);
+function clearParentIdentity() {
+  try {
+    localStorage.removeItem(getParentIdentityKey());
+  } catch (e) {}
+  renderParentRsvpCard();
 }
 
-// ============================================================================
-// 2. HEADER, SETTINGS DRAWER & ROSTER LIST
-// ============================================================================
-function renderHeaderAndSettings() {
-  renderCoachAuthButton();
+function submitParentRsvp(status) {
+  const pid = getSelectedParentPlayerId();
+  const player = state.players.find(p => p.id === pid);
+  if (!player) return;
 
-  // Team Dropdown
-  const selectEl = document.getElementById('headerTeamSelect');
-  if (selectEl) {
-    selectEl.innerHTML = appStore.teams.map(t =>
-      `<option value="${escapeHtml(t.id)}" ${t.id === state.id ? 'selected' : ''}>${escapeHtml(t.teamName || 'Untitled Team')}</option>`
-    ).join('');
-  }
+  player.rsvp = status;
+  player.present = status !== 'out';
 
-  // Format Summary Label
-  const fmtPreset = FORMATION_PRESETS[state.formationKey];
-  const fmtName = fmtPreset ? fmtPreset.label : `${getTotalFieldSlots()}v${getTotalFieldSlots()}`;
-  const fmtSummaryEl = document.getElementById('formatSummaryLabel');
-  if (fmtSummaryEl) {
-    const swapTag = (state.shiftsPerQuarter === 2 && state.midQtrPosSwap) ? ' • Mid-Swap' : '';
-    fmtSummaryEl.textContent = `${fmtName} • ${fmtDurationLabel(state.quarterMins)} Qtrs${swapTag}`;
-  }
-
-  // Position Toggle Button
-  const posBtn = document.getElementById('posToggleBtn');
-  if (posBtn) {
-    if (state.trackPositions) {
-      posBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
-      posBtn.innerHTML = '<span>📍 Pos: ON</span>';
-    } else {
-      posBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 bg-slate-800 text-slate-400 border-slate-700';
-      posBtn.innerHTML = '<span>📍 Pos: OFF</span>';
-    }
-    posBtn.disabled = !canEditGame();
-  }
-
-  // Main Tabs
-  const tabGame = document.getElementById('tabBtnGame');
-  const tabStats = document.getElementById('tabBtnStats');
-  const viewGame = document.getElementById('viewGame');
-  const viewStats = document.getElementById('viewStats');
-
-  if (tabGame && tabStats && viewGame && viewStats) {
-    if (currentMainTab === 'game') {
-      tabGame.className = 'py-1.5 rounded-lg text-xs font-extrabold transition bg-emerald-500 text-slate-950 shadow';
-      tabStats.className = 'py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white';
-      viewGame.classList.remove('hidden');
-      viewStats.classList.add('hidden');
-    } else {
-      tabStats.className = 'py-1.5 rounded-lg text-xs font-extrabold transition bg-emerald-500 text-slate-950 shadow';
-      tabGame.className = 'py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white';
-      viewStats.classList.remove('hidden');
-      viewGame.classList.add('hidden');
-    }
-  }
-
-  // Settings Drawer Inputs
-  const teamNameInput = document.getElementById('teamNameInput');
-  if (teamNameInput && document.activeElement !== teamNameInput) {
-    teamNameInput.value = state.teamName || '';
-  }
-
-  const formationSelect = document.getElementById('formationPresetSelect');
-  if (formationSelect) {
-    formationSelect.value = state.formationKey || '5v5_212';
-  }
-
-  const qSelect = document.getElementById('quarterMinsSelect');
-  const customQInput = document.getElementById('customQuarterMinsInput');
-  if (qSelect && customQInput) {
-    const qVal = Number(state.quarterMins) || 8;
-    if (PRESET_QUARTER_VALUES.includes(qVal)) {
-      qSelect.value = String(qVal);
-      customQInput.classList.add('hidden');
-    } else {
-      qSelect.value = 'custom';
-      customQInput.classList.remove('hidden');
-      if (document.activeElement !== customQInput) {
-        customQInput.value = qVal;
-      }
-    }
-  }
-
-  const shiftsSelect = document.getElementById('shiftsPerQtrSelect');
-  if (shiftsSelect) {
-    if (state.shiftsPerQuarter === 1) {
-      shiftsSelect.value = '1';
-    } else if (state.midQtrPosSwap) {
-      shiftsSelect.value = '2_swap';
-    } else {
-      shiftsSelect.value = '2';
-    }
-  }
-
-  const soundSelect = document.getElementById('setupAlertSoundSelect');
-  if (soundSelect) {
-    soundSelect.value = state.alertSoundMode || 'chime';
-  }
-
-  const deleteTeamBtn = document.getElementById('deleteTeamBtn');
-  if (deleteTeamBtn) {
-    deleteTeamBtn.classList.toggle('hidden', appStore.teams.length <= 1);
-  }
-
-  // Slot Counts
-  const totalSlotsEl = document.getElementById('totalFieldSlotsLabel');
-  if (totalSlotsEl) totalSlotsEl.textContent = getTotalFieldSlots();
-  ['FWD', 'MID', 'DEF', 'GK'].forEach(zone => {
-    const el = document.getElementById(`slotCount${zone}`);
-    if (el) el.textContent = state.slots[zone] || 0;
-  });
-
-  // Roster History List in Settings Drawer
-  const rosterListEl = document.getElementById('rosterHistoryList');
-  if (rosterListEl) {
-    if (state.players.length === 0) {
-      rosterListEl.innerHTML = `<div class="text-xs text-slate-500 italic py-2 text-center">No players added yet. Add players above to build your lineup.</div>`;
-    } else {
-      rosterListEl.innerHTML = state.players.map(p => `
-        <div class="flex items-center gap-1.5 bg-slate-950/90 border border-slate-800 rounded-xl p-2 text-xs">
-          <input type="text" value="${escapeHtml(p.number || '')}" placeholder="#" maxlength="3"
-            onchange="updatePlayerNumber('${p.id}', this.value)"
-            class="w-11 bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-center font-bold text-white focus:outline-none focus:border-emerald-500" />
-          <input type="text" value="${escapeHtml(p.name)}" placeholder="Player Name"
-            onchange="updatePlayerName('${p.id}', this.value)"
-            class="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 font-semibold text-white focus:outline-none focus:border-emerald-500" />
-          <div class="flex items-center gap-1 shrink-0" title="Prior Season Bench Quarters">
-            <span class="text-[10px] text-slate-400">Prior🪑:</span>
-            <input type="number" step="0.5" min="0" value="${fmtNum(p.prior.BENCH || 0)}"
-              onchange="updatePlayerPriorBench('${p.id}', this.value)"
-              class="w-14 bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-center mono font-bold text-slate-200 focus:outline-none focus:border-emerald-500" />
-          </div>
-          <button onclick="removePlayer('${p.id}')"
-            class="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 font-bold text-xs shrink-0"
-            title="Remove Player">
-            ✕
-          </button>
-        </div>
-      `).join('');
-    }
-  }
+  recalculateSchedule(false);
+  pushActiveTeamToCloud(true);
+  renderAll();
 }
 
-function renderOnboardingCard() {
-  const card = document.getElementById('onboardingCard');
-  if (!card) return;
-
-  if (isHeadCoach() && state.players.length === 0) {
-    card.classList.remove('hidden');
-    const nameInp = document.getElementById('onboardTeamNameInput');
-    if (nameInp && document.activeElement !== nameInp) {
-      nameInp.value = state.teamName || '';
-    }
-    const fmtSel = document.getElementById('onboardFormatSelect');
-    if (fmtSel) {
-      fmtSel.value = state.formationKey || '5v5_212';
-    }
-  } else {
-    card.classList.add('hidden');
-  }
-}
-
-// ============================================================================
-// 3. PARENT 1-TAP CHECK-IN & RSVP CARD
-// ============================================================================
 function renderParentRsvpCard() {
   const card = document.getElementById('parentRsvpCard');
   if (!card) return;
@@ -373,325 +274,572 @@ function renderParentRsvpCard() {
   }
   card.classList.remove('hidden');
 
-  const savedPlayerId = localStorage.getItem(getParentStorageKey());
-  const selectedPlayer = state.players.find(p => p.id === savedPlayerId) || null;
+  const selectedPid = getSelectedParentPlayerId();
+  const selectedPlayer = state.players.find(p => p.id === selectedPid);
 
-  const subtext = document.getElementById('parentRsvpSubtext');
-  const switchBtn = document.getElementById('switchParentPlayerBtn');
   const pickerEl = document.getElementById('parentPlayerPicker');
   const actionsEl = document.getElementById('parentRsvpActions');
+  const switchBtn = document.getElementById('switchParentPlayerBtn');
+  const subtext = document.getElementById('parentRsvpSubtext');
 
   if (!selectedPlayer) {
-    if (subtext) {
-      subtext.textContent = "Tap your child's name once so your phone remembers them, then mark their status for this game.";
-    }
-    if (switchBtn) switchBtn.classList.add('hidden');
-    if (actionsEl) actionsEl.classList.add('hidden');
+    switchBtn.classList.add('hidden');
+    actionsEl.classList.add('hidden');
+    pickerEl.classList.remove('hidden');
+    subtext.textContent = 'Which player are you here for? Tap once to remember on your phone:';
 
-    if (pickerEl) {
-      pickerEl.classList.remove('hidden');
-      const sorted = [...state.players].sort(comparePlayerNumbers);
-      pickerEl.innerHTML = sorted.map(p => `
-        <button onclick="selectParentIdentity('${p.id}')"
-          class="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-sky-500/20 border border-slate-700 hover:border-sky-400 text-xs font-bold text-white transition">
-          ${escapeHtml(formatPlayerBadge(p))}
-        </button>
-      `).join('');
-    }
+    const sorted = getSortedRosterList(state.players);
+    pickerEl.innerHTML = sorted.map(p => `
+      <button onclick="selectParentIdentity('${p.id}')"
+        class="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-950 hover:bg-sky-500/20 text-sky-200 border border-sky-500/30 transition active:scale-95">
+        ${escapeHtml(formatPlayerBadge(p))}
+      </button>
+    `).join('');
   } else {
-    if (subtext) {
-      const statusLabel = selectedPlayer.rsvp === 'going'
-        ? '✅ Going (Checked In)'
-        : selectedPlayer.rsvp === 'late'
-        ? '⏳ Running Late (Held from 1st Shift)'
-        : selectedPlayer.rsvp === 'out'
-        ? '❌ Out Today'
-        : (selectedPlayer.present ? '✅ In Lineup' : '❌ Marked Out');
-      subtext.innerHTML = `Checking in for <strong class="text-white">${escapeHtml(formatPlayerBadge(selectedPlayer))}</strong> • Current Status: <span class="text-sky-300 font-bold">${statusLabel}</span>`;
-    }
-    if (switchBtn) switchBtn.classList.remove('hidden');
-    if (pickerEl) pickerEl.classList.add('hidden');
-    if (actionsEl) actionsEl.classList.remove('hidden');
+    switchBtn.classList.remove('hidden');
+    pickerEl.classList.add('hidden');
+    actionsEl.classList.remove('hidden');
+
+    const curRsvp = selectedPlayer.rsvp || (selectedPlayer.present ? 'going' : 'out');
+    subtext.innerHTML = `Checking in for <strong class="text-white">${escapeHtml(formatPlayerBadge(selectedPlayer))}</strong>:`;
 
     const btnGoing = document.getElementById('rsvpBtnGoing');
     const btnLate = document.getElementById('rsvpBtnLate');
     const btnOut = document.getElementById('rsvpBtnOut');
 
-    const activeRsvp = selectedPlayer.rsvp || (selectedPlayer.present ? 'going' : 'out');
-    if (btnGoing) {
-      btnGoing.className = activeRsvp === 'going'
-        ? 'py-2.5 px-2 rounded-xl text-xs font-extrabold border-2 transition flex flex-col items-center gap-0.5 bg-emerald-500/25 border-emerald-400 text-emerald-200 shadow'
-        : 'py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5 bg-slate-950 border-slate-800 text-slate-300 hover:border-emerald-500/50';
-    }
-    if (btnLate) {
-      btnLate.className = activeRsvp === 'late'
-        ? 'py-2.5 px-2 rounded-xl text-xs font-extrabold border-2 transition flex flex-col items-center gap-0.5 bg-amber-500/25 border-amber-400 text-amber-200 shadow'
-        : 'py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5 bg-slate-950 border-slate-800 text-slate-300 hover:border-amber-500/50';
-    }
-    if (btnOut) {
-      btnOut.className = activeRsvp === 'out'
-        ? 'py-2.5 px-2 rounded-xl text-xs font-extrabold border-2 transition flex flex-col items-center gap-0.5 bg-rose-500/25 border-rose-400 text-rose-200 shadow'
-        : 'py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5 bg-slate-950 border-slate-800 text-slate-300 hover:border-rose-500/50';
-    }
+    btnGoing.className = `py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5 ${
+      curRsvp === 'going'
+        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-lg'
+        : 'bg-slate-950 text-slate-300 border-slate-800'
+    }`;
+    btnLate.className = `py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5 ${
+      curRsvp === 'late'
+        ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg'
+        : 'bg-slate-950 text-slate-300 border-slate-800'
+    }`;
+    btnOut.className = `py-2.5 px-2 rounded-xl text-xs font-extrabold border transition flex flex-col items-center gap-0.5 ${
+      curRsvp === 'out'
+        ? 'bg-rose-500 text-white border-rose-400 shadow-lg'
+        : 'bg-slate-950 text-slate-300 border-slate-800'
+    }`;
   }
 }
 
 // ============================================================================
-// 4. SCOREBOARD & GOAL LOG
+// MASTER UI RENDERING & ROLE-BASED VISIBILITY
+// ============================================================================
+export function renderAll() {
+  renderRolePermissionsUI();
+  renderCoachAuthButton();
+  renderTabsAndOnboarding();
+  renderHeaderAndSettings();
+  renderParentRsvpCard();
+  renderScoreboard();
+  renderTimerUI();
+  renderAttendance();
+  renderScheduleGrid();
+  renderBalanceTable();
+  renderSmsBubbles();
+  renderStatsAndHistoryTab();
+}
+
+function renderRolePermissionsUI() {
+  const banner = document.getElementById('roleBanner');
+  const teamSelect = document.getElementById('headerTeamSelect');
+  const staticTeamName = document.getElementById('headerStaticTeamName');
+  const setupGearBtn = document.getElementById('setupGearBtn');
+  const posToggleBtn = document.getElementById('posToggleBtn');
+  const addOurGoalBtn = document.getElementById('addOurGoalBtn');
+  const oppScoreControls = document.getElementById('oppScoreControls');
+  const opponentInput = document.getElementById('opponentNameInput');
+  const timerActionButtons = document.getElementById('timerActionButtons');
+  const soundControlsGroup = document.getElementById('soundControlsGroup');
+  const selectAllBtn = document.getElementById('selectAllAttendanceBtn');
+  const rotateOrderBtn = document.getElementById('rotateOrderBtn');
+  const smsSection = document.getElementById('smsSectionCard');
+  const completeGameSection = document.getElementById('completeGameSectionCard');
+
+  if (appRole === 'viewer') {
+    banner.className = 'px-4 py-1.5 text-xs font-extrabold text-center bg-sky-500/20 text-sky-200 border-b border-sky-500/30';
+    banner.innerHTML = '👀 LIVE PARENT VIEWER MODE: Check in your player below & watch live updates';
+    banner.classList.remove('hidden');
+
+    teamSelect.classList.add('hidden');
+    staticTeamName.textContent = state.teamName || 'Live Team';
+    staticTeamName.classList.remove('hidden');
+
+    setupGearBtn.classList.add('hidden');
+    posToggleBtn.classList.add('hidden');
+    addOurGoalBtn.classList.add('hidden');
+    oppScoreControls.classList.add('hidden');
+    opponentInput.disabled = true;
+    timerActionButtons.classList.add('hidden');
+    if (soundControlsGroup) soundControlsGroup.classList.add('hidden');
+    selectAllBtn.classList.add('hidden');
+    rotateOrderBtn.classList.add('hidden');
+    smsSection.classList.add('hidden');
+    completeGameSection.classList.add('hidden');
+
+    document.getElementById('rollCallHeaderTitle').textContent = '📋 Active Match Roster & RSVP Status';
+    document.getElementById('scheduleSubHint').textContent = 'Active shift highlighted in green';
+    document.getElementById('historySubHint').textContent = 'Tap any match card to view the box score';
+  } else if (appRole === 'assistant') {
+    banner.className = 'px-4 py-1.5 text-xs font-extrabold text-center bg-amber-500/20 text-amber-200 border-b border-amber-500/30';
+    banner.innerHTML = '🧢 ASSISTANT COACH MODE: Live Sideline Score, Timer & Sub Editor';
+    banner.classList.remove('hidden');
+
+    teamSelect.classList.add('hidden');
+    staticTeamName.textContent = state.teamName || 'Live Team';
+    staticTeamName.classList.remove('hidden');
+
+    setupGearBtn.classList.add('hidden');
+    if (soundControlsGroup) soundControlsGroup.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+    teamSelect.classList.remove('hidden');
+    staticTeamName.classList.add('hidden');
+    setupGearBtn.classList.remove('hidden');
+    if (soundControlsGroup) soundControlsGroup.classList.remove('hidden');
+  }
+}
+
+function switchMainTab(tab) {
+  currentActiveTab = tab;
+  renderTabsAndOnboarding();
+  if (tab === 'stats') renderStatsAndHistoryTab();
+}
+
+function renderTabsAndOnboarding() {
+  const isGame = currentActiveTab === 'game';
+  document.getElementById('viewGame').classList.toggle('hidden', !isGame);
+  document.getElementById('viewStats').classList.toggle('hidden', isGame);
+
+  document.getElementById('tabBtnGame').className = isGame
+    ? 'py-1.5 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950 shadow'
+    : 'py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white';
+  document.getElementById('tabBtnStats').className = !isGame
+    ? 'py-1.5 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950 shadow'
+    : 'py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white';
+
+  const onboarding = document.getElementById('onboardingCard');
+  if (isHeadCoach() && state.players.length === 0) {
+    onboarding.classList.remove('hidden');
+    document.getElementById('onboardTeamNameInput').value =
+      (state.teamName === 'My Team' || state.teamName.startsWith('Team ')) ? '' : state.teamName;
+    document.getElementById('onboardFormatSelect').value = state.formationKey;
+  } else {
+    onboarding.classList.add('hidden');
+  }
+}
+
+function renderHeaderAndSettings() {
+  const selectEl = document.getElementById('headerTeamSelect');
+  selectEl.innerHTML = [
+    ...appStore.teams.map(t =>
+      `<option value="${t.id}" ${t.id === state.id ? 'selected' : ''}>${escapeHtml(t.teamName || 'My Team')} (${t.players.length})</option>`
+    ),
+    `<option value="__ADD_NEW_TEAM__">➕ Add New Team...</option>`
+  ].join('');
+
+  document.getElementById('headerStaticTeamName').textContent = state.teamName || 'My Team';
+  document.getElementById('teamNameInput').value = state.teamName || '';
+
+  const deleteBtn = document.getElementById('deleteTeamBtn');
+  if (deleteBtn) {
+    deleteBtn.style.display = appStore.teams.length > 1 ? '' : 'none';
+  }
+
+  const preset = FORMATION_PRESETS[state.formationKey];
+  const formLabel = preset ? preset.label : `${getTotalFieldSlots()}v${getTotalFieldSlots()}`;
+  document.getElementById('formatSummaryLabel').textContent = `${formLabel} • ${fmtDurationLabel(state.quarterMins)} Qtrs`;
+
+  const posBtn = document.getElementById('posToggleBtn');
+  if (state.trackPositions) {
+    posBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+    posBtn.innerHTML = '<span>📍 Pos</span>';
+  } else {
+    posBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 bg-slate-800 text-slate-400 border-slate-700';
+    posBtn.innerHTML = '<span>📍 Off</span>';
+  }
+
+  document.getElementById('formationPresetSelect').value = state.formationKey;
+
+  const qSelect = document.getElementById('quarterMinsSelect');
+  const customInput = document.getElementById('customQuarterMinsInput');
+  const isPreset = PRESET_QUARTER_VALUES.includes(Number(state.quarterMins));
+  if (isPreset && qSelect.value !== 'custom') {
+    qSelect.value = String(Number(state.quarterMins));
+    customInput.classList.add('hidden');
+  } else {
+    qSelect.value = 'custom';
+    customInput.value = state.quarterMins;
+    customInput.classList.remove('hidden');
+  }
+
+  const modeVal = state.shiftsPerQuarter === 1
+    ? '1'
+    : (state.midQtrPosSwap ? '2_swap' : '2');
+  document.getElementById('shiftsPerQtrSelect').value = modeVal;
+
+  const soundSelect = document.getElementById('setupAlertSoundSelect');
+  if (soundSelect) {
+    soundSelect.value = state.alertSoundMode || 'chime';
+  }
+
+  document.getElementById('slotCountFWD').textContent = state.slots.FWD;
+  document.getElementById('slotCountMID').textContent = state.slots.MID;
+  document.getElementById('slotCountDEF').textContent = state.slots.DEF;
+  document.getElementById('slotCountGK').textContent = state.slots.GK;
+  document.getElementById('totalFieldSlotsLabel').textContent = getTotalFieldSlots();
+
+  const rosterEl = document.getElementById('rosterHistoryList');
+  if (state.players.length === 0) {
+    rosterEl.innerHTML = `<div class="text-xs text-slate-500 italic py-2 text-center">No players added yet. Use the form above to add your roster.</div>`;
+    return;
+  }
+
+  rosterEl.innerHTML = state.players.map(p => `
+    <div class="flex items-center justify-between bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs gap-2">
+      <div class="flex items-center gap-2 flex-1 min-w-0">
+        <input type="text" value="${escapeHtml(p.number || '')}" placeholder="#" maxlength="3"
+          onchange="updatePlayerNumber('${p.id}', this.value)"
+          class="w-11 bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-center font-bold text-emerald-300 text-xs" />
+        <input type="text" value="${escapeHtml(p.name)}"
+          onchange="updatePlayerName('${p.id}', this.value)"
+          class="flex-1 min-w-0 bg-transparent border-b border-transparent focus:border-emerald-500 font-bold text-white text-xs focus:outline-none" />
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <span class="text-[11px] text-slate-400">Prior Bench:</span>
+        <button onclick="adjustPrior('${p.id}', 'BENCH', -0.5)" class="w-5 h-5 rounded bg-slate-800 font-bold">-</button>
+        <span class="mono font-bold text-amber-300 w-7 text-center">${fmtNum(p.prior.BENCH || 0)}</span>
+        <button onclick="adjustPrior('${p.id}', 'BENCH', 0.5)" class="w-5 h-5 rounded bg-slate-800 font-bold">+</button>
+        <button onclick="removePlayer('${p.id}')" class="ml-1 text-slate-500 hover:text-rose-400" title="Remove">🗑️</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================================================
+// LIVE SCOREBOARD & GOAL LOGGING
 // ============================================================================
 function renderScoreboard() {
-  const editable = canEditGame();
-  const oppInput = document.getElementById('opponentNameInput');
-  if (oppInput) {
-    if (document.activeElement !== oppInput) {
-      oppInput.value = state.currentMatch.opponent || 'Opponent';
-    }
-    oppInput.disabled = !editable;
-  }
+  document.getElementById('scoreTeamLabel').textContent = state.teamName || 'My Team';
+  document.getElementById('scoreOpponentLabel').textContent = state.currentMatch.opponent || 'Opponent';
+  document.getElementById('opponentNameInput').value = state.currentMatch.opponent === 'Opponent' ? '' : state.currentMatch.opponent;
+  document.getElementById('ourScoreDisplay').textContent = state.currentMatch.ourScore;
+  document.getElementById('oppScoreDisplay').textContent = state.currentMatch.oppScore;
 
-  const teamLbl = document.getElementById('scoreTeamLabel');
-  if (teamLbl) teamLbl.textContent = state.teamName || 'My Team';
-
-  const oppLbl = document.getElementById('scoreOpponentLabel');
-  if (oppLbl) oppLbl.textContent = state.currentMatch.opponent || 'Opponent';
-
-  const ourScoreEl = document.getElementById('ourScoreDisplay');
-  if (ourScoreEl) ourScoreEl.textContent = state.currentMatch.ourScore || 0;
-
-  const oppScoreEl = document.getElementById('oppScoreDisplay');
-  if (oppScoreEl) oppScoreEl.textContent = state.currentMatch.oppScore || 0;
-
-  const addGoalBtn = document.getElementById('addOurGoalBtn');
-  if (addGoalBtn) addGoalBtn.classList.toggle('hidden', !editable);
-
-  const oppControls = document.getElementById('oppScoreControls');
-  if (oppControls) oppControls.classList.toggle('hidden', !editable);
-
-  const goalsContainer = document.getElementById('currentGameGoalsContainer');
-  const goalsList = document.getElementById('currentGameGoalsList');
   const goals = state.currentMatch.goals || [];
+  const container = document.getElementById('currentGameGoalsContainer');
+  const list = document.getElementById('currentGameGoalsList');
 
-  if (goalsContainer && goalsList) {
-    if (goals.length === 0) {
-      goalsContainer.classList.add('hidden');
-    } else {
-      goalsContainer.classList.remove('hidden');
-      goalsList.innerHTML = goals.map(g => {
-        const scorerText = escapeHtml(g.scorerLabel || getPlayerDisplayById(g.scorerId));
-        const assistText = g.assistId
-          ? ` <span class="text-slate-400">• Assist: ${escapeHtml(g.assistLabel || getPlayerDisplayById(g.assistId))}</span>`
-          : '';
-        return `
-          <div class="flex items-center justify-between bg-slate-950/80 border border-slate-800/90 rounded-xl px-2.5 py-1.5 text-xs">
-            <div class="truncate">
-              <span class="mono font-bold text-emerald-400 mr-1.5">Q${g.quarter} ${escapeHtml(g.clock || '')}</span>
-              <span class="font-bold text-white">⚽ ${scorerText}</span>
-              ${assistText}
-            </div>
-            ${editable ? `
-              <button onclick="deleteMatchGoal('${g.id}')" class="text-slate-500 hover:text-rose-400 px-1.5 font-bold" title="Remove Goal">✕</button>
-            ` : ''}
-          </div>
-        `;
-      }).join('');
-    }
+  if (goals.length === 0) {
+    container.classList.add('hidden');
+    list.innerHTML = '';
+    return;
+  }
+
+  container.classList.remove('hidden');
+  list.innerHTML = goals.map(g => {
+    const scorerName = getPlayerDisplayById(g.scorerId);
+    const assistName = g.assistId ? getPlayerDisplayById(g.assistId) : null;
+    return `
+      <div class="flex items-center justify-between bg-slate-950/80 border border-slate-800/80 rounded-lg px-2.5 py-1.5 text-xs">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="mono text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+            Q${g.quarter} (${g.clock})
+          </span>
+          <span class="font-bold text-white">⚽ ${escapeHtml(scorerName)}</span>
+          ${assistName ? `<span class="text-slate-400">• 👟 Ast: <strong class="text-blue-300">${escapeHtml(assistName)}</strong></span>` : `<span class="text-slate-500 italic">(Unassisted)</span>`}
+        </div>
+        ${canEditGame() ? `<button onclick="removeGoal('${g.id}')" class="text-slate-500 hover:text-rose-400 text-xs px-1.5" title="Undo Goal">✕</button>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function updateTeamName(val) {
+  if (!isHeadCoach()) return;
+  state.teamName = (val || '').trim() || 'My Team';
+  saveState();
+  renderAll();
+}
+
+function updateOpponentName(val) {
+  if (!canEditGame()) return;
+  state.currentMatch.opponent = (val || '').trim() || 'Opponent';
+  saveState();
+  renderScoreboard();
+}
+
+function adjustOpponentScore(delta) {
+  if (!canEditGame()) return;
+  state.currentMatch.oppScore = Math.max(0, (state.currentMatch.oppScore || 0) + delta);
+  saveState();
+  renderScoreboard();
+}
+
+function openGoalModal() {
+  if (!canEditGame()) return;
+  const presentPlayers = state.players.filter(p => p.present);
+  goalDraft = {
+    scorerId: presentPlayers.length > 0 ? presentPlayers[0].id : 'OWN_GOAL',
+    assistId: null
+  };
+  document.getElementById('goalModal').classList.remove('hidden');
+  renderGoalModalChips();
+}
+
+function closeGoalModal() {
+  document.getElementById('goalModal').classList.add('hidden');
+}
+
+function renderGoalModalChips() {
+  const presentPlayers = state.players.filter(p => p.present);
+  const scorerEl = document.getElementById('goalScorerChips');
+  const assistEl = document.getElementById('goalAssistChips');
+
+  const scorerOptions = [
+    ...presentPlayers.map(p => ({ id: p.id, label: formatPlayerBadge(p) })),
+    { id: 'OWN_GOAL', label: 'Own Goal / Team' }
+  ];
+
+  scorerEl.innerHTML = scorerOptions.map(opt => {
+    const active = goalDraft.scorerId === opt.id;
+    return `
+      <button onclick="selectGoalScorer('${opt.id}')"
+        class="px-3 py-2 rounded-xl text-xs font-bold border text-left truncate transition ${
+          active
+            ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow'
+            : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+        }">
+        ⚽ ${escapeHtml(opt.label)}
+      </button>
+    `;
+  }).join('');
+
+  const assistOptions = [
+    { id: null, label: 'Unassisted' },
+    ...presentPlayers
+      .filter(p => p.id !== goalDraft.scorerId)
+      .map(p => ({ id: p.id, label: formatPlayerBadge(p) }))
+  ];
+
+  assistEl.innerHTML = assistOptions.map(opt => {
+    const active = goalDraft.assistId === opt.id;
+    return `
+      <button onclick="selectGoalAssist(${opt.id ? `'${opt.id}'` : 'null'})"
+        class="px-3 py-2 rounded-xl text-xs font-bold border text-left truncate transition ${
+          active
+            ? 'bg-blue-500 text-slate-950 border-blue-400 shadow'
+            : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+        }">
+        ${opt.id ? '👟 ' : ''}${escapeHtml(opt.label)}
+      </button>
+    `;
+  }).join('');
+}
+
+function selectGoalScorer(id) {
+  goalDraft.scorerId = id;
+  if (goalDraft.assistId === id) goalDraft.assistId = null;
+  renderGoalModalChips();
+}
+
+function selectGoalAssist(id) {
+  goalDraft.assistId = id;
+  renderGoalModalChips();
+}
+
+function confirmGoalLog() {
+  if (!canEditGame()) return;
+  const mins = Math.floor(timer.secondsLeft / 60);
+  const secs = timer.secondsLeft % 60;
+  const clockStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+  state.currentMatch.ourScore = (state.currentMatch.ourScore || 0) + 1;
+  state.currentMatch.goals.push({
+    id: 'g_' + Date.now(),
+    quarter: timer.quarter,
+    clock: clockStr,
+    scorerId: goalDraft.scorerId,
+    assistId: goalDraft.assistId
+  });
+
+  closeGoalModal();
+  saveState();
+  renderScoreboard();
+}
+
+function removeGoal(goalId) {
+  if (!canEditGame()) return;
+  const idx = state.currentMatch.goals.findIndex(g => g.id === goalId);
+  if (idx >= 0) {
+    state.currentMatch.goals.splice(idx, 1);
+    state.currentMatch.ourScore = Math.max(0, state.currentMatch.ourScore - 1);
+    saveState();
+    renderScoreboard();
   }
 }
 
 // ============================================================================
-// 5. SIDELINE TIMER & BACKGROUND CLOCK PERSISTENCE UI
+// TIMER UI, BACKGROUND CLOCK PERSISTENCE, IN-PLAY & STAGED SUB ALERTS
 // ============================================================================
-function formatClockMMSS(sec) {
-  const s = Math.max(0, Math.floor(sec));
-  const mins = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${String(mins).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
-}
-
 function renderTimerUI() {
-  const editable = canEditGame();
-  const viewedQ = timer.viewedQuarter || timer.quarter;
-  const activeQ = timer.quarter;
-  const fullSec = getQuarterTotalSeconds(state.quarterMins);
+  const totalSec = getQuarterTotalSeconds(state.quarterMins);
   const midSec = getQuarterMidSeconds(state.quarterMins);
+  const mins = Math.floor(timer.secondsLeft / 60);
+  const secs = timer.secondsLeft % 60;
+  const clockStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
-  // Quarter Selector Tabs (Q1 - Q4)
+  document.getElementById('timerDisplay').textContent = clockStr;
+
+  const viewedQ = timer.viewedQuarter || timer.quarter;
+  const isPreviewingOtherQuarter = viewedQ !== timer.quarter;
+
   for (let q = 1; q <= 4; q++) {
-    const btn = document.getElementById(`qTab${q}`);
+    const btn = document.getElementById('qTab' + q);
     if (!btn) continue;
-
-    const isViewed = q === viewedQ;
-    const isClockQ = q === activeQ;
-    const isClockActiveOrMid = timer.running || (timer.secondsLeft < fullSec && timer.secondsLeft > 0);
-
-    let label = `Q${q}`;
-    if (isClockQ && isClockActiveOrMid) {
-      label = `🟢 Q${q}`;
-    }
-
-    btn.textContent = label;
-    if (isViewed && isClockQ) {
+    if (q === timer.quarter && q === viewedQ) {
       btn.className = 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-500 text-slate-950 shadow';
-    } else if (isViewed && !isClockQ) {
+      btn.textContent = `Q${q}`;
+    } else if (q === timer.quarter) {
+      btn.className = 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-emerald-500/25 text-emerald-300 border border-emerald-400';
+      btn.textContent = `Q${q} ⏱️`;
+    } else if (q === viewedQ) {
       btn.className = 'px-2.5 py-1 rounded-lg text-xs font-extrabold bg-sky-500 text-slate-950 shadow';
-    } else if (isClockQ && isClockActiveOrMid) {
-      btn.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+      btn.textContent = `Q${q} 👀`;
     } else {
       btn.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400 hover:text-white';
+      btn.textContent = `Q${q}`;
     }
   }
 
-  // Background Clock Persistence Notice Banner
+  // Background Clock Persistence Banner
   const bgNotice = document.getElementById('bgClockNotice');
   const bgNoticeText = document.getElementById('bgClockNoticeText');
   const activateBtn = document.getElementById('activateViewedQtrBtn');
   if (bgNotice && bgNoticeText) {
-    if (viewedQ !== activeQ) {
+    if (isPreviewingOtherQuarter) {
       bgNotice.classList.remove('hidden');
-      const statusStr = timer.running ? 'running' : 'paused';
-      bgNoticeText.innerHTML = `👀 Previewing <strong>Q${viewedQ}</strong> while <strong>Q${activeQ}</strong> clock (${formatClockMMSS(timer.secondsLeft)}) is ${statusStr}`;
+      const statusVerb = timer.running ? 'running' : 'paused';
+      bgNoticeText.innerHTML = `👀 Previewing <strong>Q${viewedQ}</strong> while <strong>Q${timer.quarter}</strong> clock (${clockStr}) is ${statusVerb}`;
       if (activateBtn) {
-        activateBtn.classList.toggle('hidden', !editable);
+        activateBtn.style.display = canEditGame() ? '' : 'none';
+        activateBtn.textContent = `Switch Clock to Q${viewedQ}`;
       }
     } else {
       bgNotice.classList.add('hidden');
     }
   }
 
-  // Active Shift Badge on Timer Card
-  const shiftBadge = document.getElementById('timerShiftBadge');
-  if (shiftBadge) {
-    const fullSub = isQuarterFullSub(activeQ);
-    const activePart = (fullSub || timer.secondsLeft > midSec) ? 1 : 2;
-    if (fullSub) {
-      shiftBadge.textContent = `Q${activeQ} • Full Quarter`;
-      shiftBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
-    } else if (activePart === 1) {
-      shiftBadge.textContent = `Q${activeQ} • 1st Shift`;
-      shiftBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
-    } else {
-      shiftBadge.textContent = `Q${activeQ} • 2nd Shift`;
-      shiftBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40';
-    }
-  }
-
-  // Clock Digital Readout
-  const displayEl = document.getElementById('timerDisplay');
-  if (displayEl) {
-    displayEl.textContent = formatClockMMSS(timer.secondsLeft);
-    if (timer.running) {
-      displayEl.className = 'mono text-5xl font-extrabold tracking-tight text-emerald-400';
-    } else if (timer.secondsLeft <= 0) {
-      displayEl.className = 'mono text-5xl font-extrabold tracking-tight text-amber-400';
-    } else {
-      displayEl.className = 'mono text-5xl font-extrabold tracking-tight text-white';
-    }
-  }
-
-  // Sound Mode Selector Button
-  const soundBtn = document.getElementById('soundModeBtn');
-  if (soundBtn) {
+  // Ref-Safe Sound Mode Button Label
+  const soundModeBtn = document.getElementById('soundModeBtn');
+  if (soundModeBtn) {
     const modeObj = ALERT_SOUND_MODES.find(m => m.key === (state.alertSoundMode || 'chime')) || ALERT_SOUND_MODES[0];
-    soundBtn.textContent = modeObj.shortLabel;
+    soundModeBtn.textContent = modeObj.shortLabel;
   }
-
-  // Timer Action Controls
-  const actionButtons = document.getElementById('timerActionButtons');
-  const soundGroup = document.getElementById('soundControlsGroup');
-  if (actionButtons) actionButtons.classList.toggle('hidden', !editable);
-  if (soundGroup) soundGroup.classList.toggle('hidden', !editable);
 
   const startBtn = document.getElementById('timerStartBtn');
-  if (startBtn) {
-    if (timer.running) {
-      startBtn.textContent = '⏸ Pause';
-      startBtn.className = 'px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-sm transition shadow-lg shadow-amber-400/20';
-    } else if (viewedQ !== activeQ) {
-      startBtn.textContent = `▶ Start Q${viewedQ}`;
-      startBtn.className = 'px-5 py-2.5 rounded-xl bg-sky-400 hover:bg-sky-300 text-slate-950 font-extrabold text-sm transition shadow-lg shadow-sky-400/20';
-    } else {
-      startBtn.textContent = timer.secondsLeft < fullSec && timer.secondsLeft > 0 ? '▶ Resume' : '▶ Start';
-      startBtn.className = 'px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm transition shadow-lg shadow-emerald-500/20';
-    }
-  }
-
-  const syncMidBtn = document.getElementById('syncMidBtn');
-  if (syncMidBtn) {
-    syncMidBtn.classList.toggle('hidden', isQuarterFullSub(activeQ));
-  }
-
-  // Progress Bars
-  const splitBar = document.getElementById('timerProgressSplit');
-  const singleBar = document.getElementById('timerProgressSingle');
-  const pHalf1 = document.getElementById('progressHalf1');
-  const pHalf2 = document.getElementById('progressHalf2');
-  const pFull = document.getElementById('progressFullBar');
-
-  if (isQuarterFullSub(activeQ)) {
-    if (splitBar) splitBar.classList.add('hidden');
-    if (singleBar) singleBar.classList.remove('hidden');
-    if (pFull) {
-      const pct = Math.max(0, Math.min(100, (timer.secondsLeft / fullSec) * 100));
-      pFull.style.width = `${pct}%`;
-    }
+  if (timer.running) {
+    startBtn.textContent = '⏸ Pause';
+    startBtn.className = 'px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-sm transition';
   } else {
-    if (splitBar) splitBar.classList.remove('hidden');
-    if (singleBar) singleBar.classList.add('hidden');
-    const firstHalfDuration = fullSec - midSec;
-    if (timer.secondsLeft > midSec) {
-      const remInFirst = timer.secondsLeft - midSec;
-      const pct1 = Math.max(0, Math.min(100, (remInFirst / firstHalfDuration) * 100));
-      if (pHalf1) pHalf1.style.width = `${pct1}%`;
-      if (pHalf2) pHalf2.style.width = '100%';
-    } else {
-      if (pHalf1) pHalf1.style.width = '0%';
-      const pct2 = Math.max(0, Math.min(100, (timer.secondsLeft / midSec) * 100));
-      if (pHalf2) pHalf2.style.width = `${pct2}%`;
-    }
+    startBtn.textContent = isPreviewingOtherQuarter ? `▶ Start Q${viewedQ}` : '▶ Start';
+    startBtn.className = 'px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm transition shadow-lg shadow-emerald-500/20';
   }
+
+  const fullQuarterLive = isQuarterFullSub(timer.quarter);
+  const badge = document.getElementById('timerShiftBadge');
+  const syncMidBtn = document.getElementById('syncMidBtn');
+  const splitProgress = document.getElementById('timerProgressSplit');
+  const singleProgress = document.getElementById('timerProgressSingle');
+
+  if (!fullQuarterLive) {
+    const isFirstHalf = timer.secondsLeft > midSec;
+    if (state.midQtrPosSwap) {
+      badge.textContent = isFirstHalf
+        ? `Q${timer.quarter} • 1st Half`
+        : `Q${timer.quarter} • 2nd Half (FWD⇄DEF Swapped)`;
+    } else {
+      badge.textContent = isFirstHalf
+        ? `Q${timer.quarter} • 1st Shift`
+        : `Q${timer.quarter} • 2nd Shift`;
+    }
+
+    syncMidBtn.classList.remove('hidden');
+    splitProgress.classList.remove('hidden');
+    singleProgress.classList.add('hidden');
+
+    const p1 = isFirstHalf ? ((timer.secondsLeft - midSec) / Math.max(1, totalSec - midSec)) * 100 : 0;
+    const p2 = isFirstHalf ? 100 : (timer.secondsLeft / Math.max(1, midSec)) * 100;
+    document.getElementById('progressHalf1').style.width = `${Math.max(0, Math.min(100, p1))}%`;
+    document.getElementById('progressHalf2').style.width = `${Math.max(0, Math.min(100, p2))}%`;
+  } else {
+    badge.textContent = `Q${timer.quarter} • Full Quarter`;
+    syncMidBtn.classList.add('hidden');
+    splitProgress.classList.add('hidden');
+    singleProgress.classList.remove('hidden');
+
+    const pct = (timer.secondsLeft / Math.max(1, totalSec)) * 100;
+    document.getElementById('progressFullBar').style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  }
+
+  renderLiveInPlayPanel();
+  renderStagedAlertsUI();
 }
 
-// ============================================================================
-// 6. STAGED SUBSTITUTION ALERTS (ACTIVE BANNER ABOVE + QUEUED CARD BELOW)
-// ============================================================================
-function computeShiftDiffSummary(targetShift) {
-  if (!targetShift) return { comingIn: [], goingOut: [], posSwaps: [], benchList: [] };
-
-  const presentPlayers = state.players.filter(p => p.present);
+function buildShiftDiffSummaryHtml(targetShift) {
+  if (!targetShift) return '';
   const prevShift = targetShift.index > 0 ? state.computedShifts[targetShift.index - 1] : null;
-  const benchList = presentPlayers.filter(p => targetShift.benchIds.includes(p.id));
+  const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
 
-  if (!prevShift) {
-    return {
-      comingIn: [],
-      goingOut: [],
-      posSwaps: [],
-      benchList
-    };
+  if (targetShift.part === 2 && targetShift.isMidQtrPosSwapShift) {
+    const newFwds = Object.entries(targetShift.positions || {})
+      .filter(([pid, pos]) => !targetShift.benchIds.includes(pid) && pos === 'FWD' && playerMap[pid])
+      .map(([pid]) => playerMap[pid]);
+    const newDefs = Object.entries(targetShift.positions || {})
+      .filter(([pid, pos]) => !targetShift.benchIds.includes(pid) && pos === 'DEF' && playerMap[pid])
+      .map(([pid]) => playerMap[pid]);
+
+    return `
+      <div class="text-emerald-300 font-bold">🔄 Mid-Quarter Striker ⇄ Defender Swap (Bench, MID & GK stay)</div>
+      <div><strong>⚔️ Move to FWD:</strong> ${newFwds.length ? newFwds.map(escapeHtml).join(', ') : 'None'}</div>
+      <div><strong>🛡️ Move to DEF:</strong> ${newDefs.length ? newDefs.map(escapeHtml).join(', ') : 'None'}</div>
+    `;
   }
 
-  const comingIn = presentPlayers.filter(
-    p => prevShift.benchIds.includes(p.id) && !targetShift.benchIds.includes(p.id)
-  );
-  const goingOut = presentPlayers.filter(
-    p => !prevShift.benchIds.includes(p.id) && targetShift.benchIds.includes(p.id)
-  );
-  const posSwaps = presentPlayers.filter(p => {
-    if (prevShift.benchIds.includes(p.id) || targetShift.benchIds.includes(p.id)) return false;
-    return state.trackPositions && prevShift.positions[p.id] && targetShift.positions[p.id] && prevShift.positions[p.id] !== targetShift.positions[p.id];
-  });
+  const goingOut = targetShift.benchIds.map(id => playerMap[id]).filter(Boolean);
+  const comingIn = prevShift
+    ? prevShift.benchIds.filter(id => !targetShift.benchIds.includes(id)).map(id => playerMap[id]).filter(Boolean)
+    : [];
 
-  return { comingIn, goingOut, posSwaps, benchList };
+  let html = `
+    <div><strong>🏃 Coming ON Field:</strong> <span class="text-emerald-300 font-semibold">${comingIn.length ? comingIn.map(escapeHtml).join(', ') : 'Starting Lineup'}</span></div>
+    <div><strong>🪑 Going to Bench:</strong> <span class="text-slate-200 font-semibold">${goingOut.length ? goingOut.map(escapeHtml).join(', ') : 'None (All Play)'}</span></div>
+  `;
+
+  if (state.trackPositions) {
+    const posSummary = Object.entries(targetShift.positions || {})
+      .filter(([pid]) => !targetShift.benchIds.includes(pid) && playerMap[pid])
+      .map(([pid, pos]) => `${escapeHtml(playerMap[pid])} (${pos})`)
+      .join(' • ');
+    if (posSummary) {
+      html += `<div class="pt-1 text-emerald-300"><strong>📍 Field Spots:</strong> ${posSummary}</div>`;
+    }
+  }
+
+  return html;
 }
 
 function getShiftHeadingLabel(shift) {
   if (!shift) return '';
-  if (state.shiftsPerQuarter === 1 || state.fullQuarterLocks[shift.quarter]) {
-    return `Q${shift.quarter} • Start of Quarter`;
-  }
-  return shift.part === 1
-    ? `Q${shift.quarter} • 1st Shift (Start of Q${shift.quarter})`
-    : `Q${shift.quarter} • 2nd Shift (Mid-Quarter ${fmtDurationLabel(state.quarterMins / 2)})`;
+  const isFull = isQuarterFullSub(shift.quarter);
+  if (isFull) return `Q${shift.quarter} • Start of Quarter`;
+  if (shift.part === 1) return `Q${shift.quarter} • 1st Shift (Start of Q${shift.quarter})`;
+  return state.midQtrPosSwap
+    ? `Q${shift.quarter} • Mid-Quarter FWD⇄DEF Swap`
+    : `Q${shift.quarter} • 2nd Shift (Mid-Quarter Sub)`;
 }
 
 function renderStagedAlertsUI() {
@@ -700,247 +848,187 @@ function renderStagedAlertsUI() {
   const activeContent = document.getElementById('subAlertContent');
   const queuedCard = document.getElementById('queuedSubCard');
 
-  const presentPlayers = state.players.filter(p => p.present);
-  if (presentPlayers.length === 0 || !state.computedShifts.length) {
-    if (activeBanner) activeBanner.classList.add('hidden');
-    if (queuedCard) {
-      queuedCard.innerHTML = `<div class="text-xs text-slate-400 text-center py-1">Add present players to view upcoming rotation changes.</div>`;
-    }
+  if (!activeBanner || !queuedCard) return;
+
+  const presentCount = state.players.filter(p => p.present).length;
+  if (presentCount === 0) {
+    activeBanner.classList.add('hidden');
+    queuedCard.classList.add('hidden');
     return;
   }
 
-  // 1. TOP ACTIVE SUBSTITUTION BANNER
-  if (activeBanner && activeTitle && activeContent) {
-    const activeShift = typeof timer.activeAlertShiftIdx === 'number'
-      ? state.computedShifts[timer.activeAlertShiftIdx]
-      : null;
+  // 1. Render Active Alert Banner (ABOVE In-Play) if triggered and not yet dismissed
+  const activeAlertShift = typeof timer.activeAlertShiftIdx === 'number'
+    ? state.computedShifts[timer.activeAlertShiftIdx]
+    : null;
 
-    if (!activeShift) {
-      activeBanner.classList.add('hidden');
-    } else {
-      activeBanner.classList.remove('hidden');
-      activeTitle.textContent = `🔔 Active Change Now: ${getShiftHeadingLabel(activeShift)}`;
-      const diff = computeShiftDiffSummary(activeShift);
-
-      const lines = [];
-      if (diff.comingIn.length > 0) {
-        const inBadges = diff.comingIn.map(p => {
-          const pos = state.trackPositions ? ` (${activeShift.positions[p.id] || 'MID'})` : '';
-          return `<span class="inline-block px-2 py-0.5 rounded-md bg-emerald-500/25 border border-emerald-400/50 text-emerald-200 font-bold mr-1 mb-1">🟢 IN: ${escapeHtml(formatPlayerBadge(p))}${pos}</span>`;
-        }).join('');
-        lines.push(`<div>${inBadges}</div>`);
-      }
-      if (diff.goingOut.length > 0) {
-        const outBadges = diff.goingOut.map(p =>
-          `<span class="inline-block px-2 py-0.5 rounded-md bg-rose-500/25 border border-rose-400/50 text-rose-200 font-bold mr-1 mb-1">🪑 OFF TO BENCH: ${escapeHtml(formatPlayerBadge(p))}</span>`
-        ).join('');
-        lines.push(`<div>${outBadges}</div>`);
-      }
-      if (diff.posSwaps.length > 0) {
-        const prevShift = state.computedShifts[activeShift.index - 1];
-        const swapBadges = diff.posSwaps.map(p =>
-          `<span class="inline-block px-2 py-0.5 rounded-md bg-sky-500/25 border border-sky-400/50 text-sky-200 font-semibold mr-1 mb-1">🔄 ${escapeHtml(formatPlayerBadge(p))}: ${prevShift.positions[p.id]} → ${activeShift.positions[p.id]}</span>`
-        ).join('');
-        lines.push(`<div>${swapBadges}</div>`);
-      }
-      if (lines.length === 0) {
-        const benchNames = diff.benchList.map(p => escapeHtml(formatPlayerBadge(p))).join(', ') || 'None';
-        lines.push(`<div class="text-amber-200 font-semibold">Lineup continues • Sitting on Bench: ${benchNames}</div>`);
-      }
-      activeContent.innerHTML = lines.join('');
-    }
+  if (activeAlertShift) {
+    activeTitle.textContent = `🔔 Now Active: ${getShiftHeadingLabel(activeAlertShift)}`;
+    activeContent.innerHTML = buildShiftDiffSummaryHtml(activeAlertShift);
+    activeBanner.classList.remove('hidden');
+  } else {
+    activeBanner.classList.add('hidden');
   }
 
-  // 2. BOTTOM QUEUED NEXT CHANGE CARD
-  if (queuedCard) {
-    const nextShift = getNextQueuedShiftObject();
-    if (!nextShift) {
-      queuedCard.innerHTML = `
-        <div class="flex items-center justify-between text-xs text-slate-400">
-          <span class="font-bold text-slate-300">⏭️ Next Queued Rotation</span>
-          <span class="text-emerald-400 font-semibold">All scheduled shifts triggered</span>
-        </div>
-      `;
-      return;
-    }
-
-    const diff = computeShiftDiffSummary(nextShift);
-    const editable = canEditGame();
-
-    const inStr = diff.comingIn.length > 0
-      ? diff.comingIn.map(p => {
-          const pos = state.trackPositions ? ` (${nextShift.positions[p.id] || 'MID'})` : '';
-          return `<span class="text-emerald-300 font-bold">${escapeHtml(formatPlayerBadge(p))}${pos}</span>`;
-        }).join(', ')
-      : '<span class="text-slate-400">No bench sub (same on-field players)</span>';
-
-    const outStr = diff.goingOut.length > 0
-      ? diff.goingOut.map(p => `<span class="text-rose-300 font-semibold">${escapeHtml(formatPlayerBadge(p))}</span>`).join(', ')
-      : '<span class="text-slate-400">None</span>';
-
-    let swapHtml = '';
-    if (diff.posSwaps.length > 0) {
-      const prevShift = state.computedShifts[nextShift.index - 1];
-      const sList = diff.posSwaps.map(p =>
-        `<span class="text-sky-300 font-semibold">${escapeHtml(formatPlayerBadge(p))} (${prevShift.positions[p.id]}→${nextShift.positions[p.id]})</span>`
-      ).join(', ');
-      swapHtml = `<div class="text-[11px] text-slate-300"><span class="text-slate-400 font-semibold">🔄 Pos Swaps:</span> ${sList}</div>`;
-    }
-
+  // 2. Render Queued Next Change Card (BELOW In-Play)
+  const nextShift = getNextQueuedShiftObject();
+  if (!nextShift) {
+    queuedCard.classList.remove('hidden');
     queuedCard.innerHTML = `
-      <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2 mb-2">
-        <div>
-          <span class="text-[11px] font-extrabold uppercase tracking-wider text-indigo-300">
-            ⏭️ Queued Next: ${getShiftHeadingLabel(nextShift)}
-          </span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          ${editable ? `
-            <button onclick="openEditModal(${nextShift.index})"
-              class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-semibold">
-              ✏️ Edit
-            </button>
-            <button onclick="activateQueuedSubNow(${nextShift.index})"
-              class="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-[11px] font-bold">
-              🔔 Alert Now
-            </button>
-          ` : ''}
-        </div>
-      </div>
-      <div class="space-y-1 text-xs">
-        <div><span class="text-slate-400 font-semibold">🟢 Ready to Sub IN:</span> ${inStr}</div>
-        <div><span class="text-slate-400 font-semibold">🪑 Coming OFF to Bench:</span> ${outStr}</div>
-        ${swapHtml}
+      <div class="flex items-center justify-between text-xs text-slate-400">
+        <span class="font-bold uppercase tracking-wider text-slate-500">⏭️ Next Queued Rotation</span>
+        <span class="italic text-slate-500">Final shift of match reached</span>
       </div>
     `;
+    return;
   }
+
+  queuedCard.classList.remove('hidden');
+  queuedCard.innerHTML = `
+    <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2 mb-2">
+      <div class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+        <span class="text-xs font-extrabold uppercase tracking-wider text-amber-300">
+          ⏭️ Queued Next: ${escapeHtml(getShiftHeadingLabel(nextShift))}
+        </span>
+      </div>
+      ${canEditGame() ? `
+        <button onclick="activateQueuedAlertNow(${nextShift.index})"
+          class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-[11px] font-bold transition">
+          🔔 Activate Alert
+        </button>
+      ` : ''}
+    </div>
+    <div class="text-xs text-slate-300 space-y-1">
+      ${buildShiftDiffSummaryHtml(nextShift)}
+    </div>
+  `;
 }
 
-// ============================================================================
-// 7. CURRENTLY IN-PLAY LINEUP & POSITIONS PANEL
-// ============================================================================
+function activateQueuedAlertNow(shiftIdx) {
+  if (!canEditGame()) return;
+  triggerSubAlertForShift(shiftIdx);
+  syncTimerToStateAndCloud();
+  renderTimerUI();
+}
+
 function renderLiveInPlayPanel() {
   const container = document.getElementById('liveInPlayContainer');
   if (!container) return;
 
-  const presentPlayers = state.players.filter(p => p.present);
-  if (presentPlayers.length === 0) {
-    container.innerHTML = `
-      <div class="text-center py-6 space-y-2">
-        <div class="text-2xl">⚽</div>
-        <div class="text-sm font-bold text-white">No Players Checked In</div>
-        <div class="text-xs text-slate-400">Add players or mark them present in Roll Call below to see your live on-field lineup.</div>
-      </div>
-    `;
+  if (state.players.filter(p => p.present).length === 0) {
+    container.innerHTML = `<div class="text-xs text-slate-500 italic">Add players to your roster to see the active lineup.</div>`;
     return;
   }
 
   const viewedQ = timer.viewedQuarter || timer.quarter;
   const isPreviewingOtherQuarter = viewedQ !== timer.quarter;
-  const fullSub = isQuarterFullSub(viewedQ);
-
-  // Determine which shift of viewedQ to display
-  let targetShift = getActiveShiftObject(true);
-  if (!fullSub && viewedShiftPartOverride && (viewedShiftPartOverride === 1 || viewedShiftPartOverride === 2)) {
-    const overrideCandidate = state.computedShifts.find(s => s.quarter === viewedQ && s.part === viewedShiftPartOverride);
-    if (overrideCandidate) targetShift = overrideCandidate;
-  }
-
-  if (!targetShift) {
+  const activeShift = getActiveShiftObject(isPreviewingOtherQuarter);
+  if (!activeShift) {
     container.innerHTML = '';
     return;
   }
 
-  const editable = canEditGame();
-  const fieldPlayers = presentPlayers.filter(p => !targetShift.benchIds.includes(p.id));
-  const benchPlayers = presentPlayers.filter(p => targetShift.benchIds.includes(p.id));
+  const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
+  const benchNames = activeShift.benchIds.map(id => playerMap[id]).filter(Boolean);
+  const isFullQtr = isQuarterFullSub(activeShift.quarter);
+  const shiftDurLabel = fmtDurationLabel(state.quarterMins / state.shiftsPerQuarter);
+  const qtrDurLabel = fmtDurationLabel(state.quarterMins);
+  const shiftDesc = isFullQtr
+    ? `Q${activeShift.quarter} • Full Quarter (${qtrDurLabel})`
+    : `Q${activeShift.quarter} • ${activeShift.part === 1 ? '1st' : '2nd'} Shift (${shiftDurLabel})`;
 
-  const statusPill = isPreviewingOtherQuarter
-    ? `<span class="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-sky-500/20 text-sky-300 border border-sky-500/40">👀 PREVIEWING Q${viewedQ}${fullSub ? '' : ` • Shift ${targetShift.part}`}</span>`
-    : `<span class="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">🟢 ON FIELD NOW • Q${targetShift.quarter}${fullSub ? ' (Full Qtr)' : ` • Shift ${targetShift.part}`}</span>`;
+  const posGroups = { FWD: [], MID: [], DEF: [], GK: [] };
+  const allFieldNames = [];
+  Object.entries(activeShift.positions || {}).forEach(([pid, pos]) => {
+    if (!activeShift.benchIds.includes(pid) && playerMap[pid]) {
+      allFieldNames.push(playerMap[pid]);
+      if (!posGroups[pos]) posGroups[pos] = [];
+      posGroups[pos].push(playerMap[pid]);
+    }
+  });
 
-  let partToggleHtml = '';
-  if (!fullSub) {
-    partToggleHtml = `
-      <div class="inline-flex bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[11px]">
-        <button onclick="setViewedShiftPart(1)" class="px-2 py-0.5 rounded-md font-bold ${targetShift.part === 1 ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}">1st</button>
-        <button onclick="setViewedShiftPart(2)" class="px-2 py-0.5 rounded-md font-bold ${targetShift.part === 2 ? 'bg-amber-400 text-slate-950' : 'text-slate-400 hover:text-white'}">2nd</button>
-      </div>
-    `;
-  }
-
-  let fieldContentHtml = '';
-  if (state.trackPositions) {
-    const zones = [
-      { key: 'FWD', label: '⚔️ FWD', cls: 'pos-FWD' },
-      { key: 'MID', label: '⚡ MID', cls: 'pos-MID' },
-      { key: 'DEF', label: '🛡️ DEF', cls: 'pos-DEF' },
-      { key: 'GK',  label: '🧤 GK',  cls: 'pos-GK' }
-    ].filter(z => (state.slots[z.key] || 0) > 0 || fieldPlayers.some(p => targetShift.positions[p.id] === z.key));
-
-    fieldContentHtml = `
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        ${zones.map(z => {
-          const zPlayers = fieldPlayers.filter(p => (targetShift.positions[p.id] || 'MID') === z.key);
-          const badges = zPlayers.length > 0
-            ? zPlayers.map(p => `<span class="px-2.5 py-1 rounded-lg text-xs font-extrabold ${z.cls}">${escapeHtml(formatPlayerBadge(p))}</span>`).join('')
-            : `<span class="text-xs text-slate-500 italic">Open</span>`;
-          return `
-            <div class="bg-slate-950/90 border border-slate-800/90 rounded-xl p-2.5">
-              <div class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">${z.label}</div>
-              <div class="flex flex-wrap gap-1.5">${badges}</div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
-  } else {
-    fieldContentHtml = `
-      <div class="bg-slate-950/90 border border-slate-800/90 rounded-xl p-3">
-        <div class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-400 mb-2">🏃 Active Field Players (${fieldPlayers.length})</div>
-        <div class="flex flex-wrap gap-1.5">
-          ${fieldPlayers.map(p => `<span class="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 text-xs font-bold">${escapeHtml(formatPlayerBadge(p))}</span>`).join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  const benchBadges = benchPlayers.length > 0
-    ? benchPlayers.map(p => `<span class="px-2.5 py-1 rounded-lg pos-BENCH text-xs font-bold">${escapeHtml(formatPlayerBadge(p))}</span>`).join('')
-    : `<span class="text-xs text-emerald-400 font-semibold">Everyone Present is Playing on Field!</span>`;
+  const headerBadgeColor = isPreviewingOtherQuarter
+    ? 'border-sky-500/40'
+    : 'border-emerald-500/40';
+  const dotColor = isPreviewingOtherQuarter
+    ? 'bg-sky-400'
+    : 'bg-emerald-400 animate-pulse';
+  const titlePrefix = isPreviewingOtherQuarter
+    ? `Previewing Lineup: ${shiftDesc}`
+    : `Currently In Play: ${shiftDesc}`;
+  const titleColor = isPreviewingOtherQuarter ? 'text-sky-300' : 'text-emerald-300';
 
   container.innerHTML = `
-    <div class="space-y-3">
-      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
-        <div class="flex items-center gap-2 flex-wrap">
-          ${statusPill}
-          ${partToggleHtml}
+    <div class="bg-slate-950/90 border ${headerBadgeColor} rounded-xl p-3 space-y-2">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full ${dotColor}"></span>
+          <span class="text-xs font-extrabold uppercase tracking-wider ${titleColor}">${titlePrefix}</span>
         </div>
-        ${editable ? `
-          <button onclick="openEditModal(${targetShift.index})"
-            class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 text-xs font-bold transition">
-            ✏️ Swap / Edit Shift
+        ${canEditGame() ? `
+          <button onclick="openEditModal(${activeShift.index})" class="text-[11px] font-semibold text-emerald-400 hover:underline shrink-0">
+            ✏️ Edit Lineup
           </button>
         ` : ''}
       </div>
 
-      ${fieldContentHtml}
-
-      <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2.5">
-        <div class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
-          🪑 On Bench This Shift (${benchPlayers.length})
-        </div>
-        <div class="flex flex-wrap gap-1.5">${benchBadges}</div>
+      <div class="flex items-center gap-1.5 flex-wrap pt-0.5">
+        <span class="text-[11px] font-bold uppercase text-slate-400">🪑 Bench:</span>
+        ${benchNames.length > 0
+          ? benchNames.map(n => `<span class="px-2 py-0.5 rounded-md text-xs font-bold pos-BENCH">${escapeHtml(n)}</span>`).join('')
+          : `<span class="text-xs text-slate-500 italic">None (All Play)</span>`
+        }
       </div>
+
+      ${state.trackPositions ? `
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1.5 border-t border-slate-800/80 text-xs">
+          ${posGroups.FWD.length ? `
+            <div class="bg-slate-900/90 border border-rose-500/30 rounded-lg p-2">
+              <div class="text-[10px] font-extrabold text-rose-400 uppercase">⚔️ Attack (FWD)</div>
+              <div class="font-bold text-white mt-0.5">${posGroups.FWD.map(escapeHtml).join(', ')}</div>
+            </div>
+          ` : ''}
+          ${posGroups.MID.length ? `
+            <div class="bg-slate-900/90 border border-blue-500/30 rounded-lg p-2">
+              <div class="text-[10px] font-extrabold text-blue-400 uppercase">⚡ Midfield (MID)</div>
+              <div class="font-bold text-white mt-0.5">${posGroups.MID.map(escapeHtml).join(', ')}</div>
+            </div>
+          ` : ''}
+          ${posGroups.DEF.length ? `
+            <div class="bg-slate-900/90 border border-emerald-500/30 rounded-lg p-2">
+              <div class="text-[10px] font-extrabold text-emerald-400 uppercase">🛡️ Defense (DEF)</div>
+              <div class="font-bold text-white mt-0.5">${posGroups.DEF.map(escapeHtml).join(', ')}</div>
+            </div>
+          ` : ''}
+          ${posGroups.GK.length ? `
+            <div class="bg-slate-900/90 border border-amber-500/30 rounded-lg p-2">
+              <div class="text-[10px] font-extrabold text-amber-400 uppercase">🧤 Goalie (GK)</div>
+              <div class="font-bold text-white mt-0.5">${posGroups.GK.map(escapeHtml).join(', ')}</div>
+            </div>
+          ` : ''}
+        </div>
+      ` : `
+        <div class="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-800/80 text-xs">
+          <span class="text-[11px] font-bold uppercase text-emerald-400">🏃 On Field:</span>
+          <span class="font-bold text-white">${allFieldNames.map(escapeHtml).join(', ')}</span>
+        </div>
+      `}
     </div>
   `;
 }
 
 // ============================================================================
-// 8. ROLL CALL / ATTENDANCE BAR
+// ATTENDANCE, SCHEDULE GRID & FAIRNESS BALANCE TABLE
 // ============================================================================
-function getSortedRosterPlayers() {
-  const copy = [...state.players];
+function setRosterSort(mode) {
+  state.rosterSort = mode;
+  saveState(false);
+  renderAttendance();
+}
+
+function getSortedRosterList(playersArray) {
+  const copy = [...playersArray];
   if (state.rosterSort === 'name') {
     copy.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   } else if (state.rosterSort === 'number') {
@@ -950,872 +1038,307 @@ function getSortedRosterPlayers() {
 }
 
 function renderAttendance() {
-  const editable = canEditGame();
   const presentCount = state.players.filter(p => p.present).length;
   const fieldSlots = getTotalFieldSlots();
-  const benchCount = Math.max(0, presentCount - fieldSlots);
+  const sittingCount = Math.max(0, presentCount - fieldSlots);
 
-  const titleEl = document.getElementById('rollCallHeaderTitle');
-  if (titleEl) {
-    titleEl.textContent = editable
-      ? '📋 Roll Call (Tap Player to Toggle Present)'
-      : '📋 Game Day Roll Call & RSVP Status';
-  }
+  document.getElementById('attendanceSubtext').textContent =
+    `${presentCount} present • ${fieldSlots} on field • ${sittingCount} sitting per shift`;
 
-  const subEl = document.getElementById('attendanceSubtext');
-  if (subEl) {
-    subEl.textContent = `${presentCount} of ${state.players.length} present • ${fieldSlots} on field, ${benchCount} on bench per shift`;
-  }
-
-  // Sort buttons
-  ['order', 'name', 'number'].forEach(mode => {
-    const btnId = mode === 'order' ? 'sortBtnOrder' : mode === 'name' ? 'sortBtnName' : 'sortBtnNumber';
-    const btn = document.getElementById(btnId);
+  ['Order', 'Name', 'Number'].forEach(label => {
+    const key = label.toLowerCase();
+    const btn = document.getElementById('sortBtn' + label);
     if (btn) {
-      btn.className = (state.rosterSort || 'order') === mode
+      btn.className = state.rosterSort === key
         ? 'px-2 py-1 rounded-md font-bold bg-emerald-500 text-slate-950'
         : 'px-2 py-1 rounded-md font-semibold text-slate-400 hover:text-white';
     }
   });
 
-  const selectAllBtn = document.getElementById('selectAllAttendanceBtn');
-  const rotateBtn = document.getElementById('rotateOrderBtn');
-  if (selectAllBtn) selectAllBtn.classList.toggle('hidden', !editable);
-  if (rotateBtn) rotateBtn.classList.toggle('hidden', !editable);
-
-  const chipsEl = document.getElementById('attendanceChips');
-  if (!chipsEl) return;
-
+  const container = document.getElementById('attendanceChips');
   if (state.players.length === 0) {
-    chipsEl.innerHTML = `<span class="text-xs text-slate-500 italic">No players on roster yet.</span>`;
+    container.innerHTML = `<span class="text-xs text-slate-500 italic">No players in roster yet.</span>`;
     return;
   }
 
-  const sortedPlayers = getSortedRosterPlayers();
-  chipsEl.innerHTML = sortedPlayers.map(p => {
-    let rsvpTag = '';
-    if (p.rsvp === 'late') {
-      rsvpTag = `<span class="ml-1 px-1.5 py-0.2 rounded bg-amber-500/25 text-amber-300 text-[10px] font-extrabold">⏳ LATE</span>`;
-    } else if (p.rsvp === 'going') {
-      rsvpTag = `<span class="ml-1 text-[10px] text-emerald-300">✓</span>`;
-    } else if (p.rsvp === 'out') {
-      rsvpTag = `<span class="ml-1 text-[10px] text-rose-300">OUT</span>`;
+  const sortedPlayers = getSortedRosterList(state.players);
+  const editable = canEditGame();
+
+  container.innerHTML = sortedPlayers.map(p => {
+    const badge = formatPlayerBadge(p);
+    const clickAttr = editable ? `onclick="togglePlayerPresence('${p.id}')"` : '';
+    const rsvpTag = p.rsvp === 'late'
+      ? `<span class="ml-1 px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-200 text-[10px] font-extrabold">⏳ Late</span>`
+      : (p.rsvp === 'going' && p.present ? `<span class="text-[10px] text-emerald-300">✓</span>` : '');
+
+    if (p.present) {
+      return `
+        <button ${clickAttr}
+          class="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm transition ${editable ? 'active:scale-95' : 'cursor-default'}">
+          <span class="w-2 h-2 rounded-full ${p.rsvp === 'late' ? 'bg-amber-400' : 'bg-emerald-400'}"></span>
+          <span>${escapeHtml(badge)}</span>
+          ${rsvpTag}
+        </button>
+      `;
+    } else {
+      return `
+        <button ${clickAttr}
+          class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/70 text-slate-500 border border-slate-800 line-through flex items-center gap-1.5 transition ${editable ? 'active:scale-95' : 'cursor-default'}">
+          <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+          <span>${escapeHtml(badge)}</span>
+        </button>
+      `;
     }
-
-    const baseCls = p.present
-      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200 hover:bg-emerald-500/30'
-      : 'bg-slate-950 border-slate-800 text-slate-500 line-through hover:border-slate-700';
-
-    return `
-      <button ${editable ? `onclick="toggleAttendance('${p.id}')"` : 'disabled'}
-        class="px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1 ${baseCls}">
-        <span>${p.present ? '🟢' : '⚪'} ${escapeHtml(formatPlayerBadge(p))}</span>
-        ${rsvpTag}
-      </button>
-    `;
   }).join('');
 }
 
-// ============================================================================
-// 9. QUARTER-BY-QUARTER ROTATION SCHEDULE GRID
-// ============================================================================
 function renderScheduleGrid() {
   const grid = document.getElementById('scheduleGrid');
-  const hint = document.getElementById('scheduleSubHint');
-  if (!grid) return;
-
-  const editable = canEditGame();
-  if (hint) {
-    hint.textContent = editable
-      ? 'Active clock shift highlighted • Tap any shift to customize'
-      : 'Live rotation schedule';
-  }
-
-  const presentPlayers = state.players.filter(p => p.present);
-  if (presentPlayers.length === 0) {
-    grid.innerHTML = `<div class="col-span-full bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-xs text-slate-400">Add and check in players above to generate the 4-quarter rotation schedule.</div>`;
-    return;
-  }
-
-  const activeClockShift = getActiveShiftObject(false);
+  const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
+  const shiftDurLabel = fmtDurationLabel(state.quarterMins / state.shiftsPerQuarter);
+  const qtrDurLabel = fmtDurationLabel(state.quarterMins);
+  const activeShift = getActiveShiftObject(false);
   const viewedQ = timer.viewedQuarter || timer.quarter;
+  const editable = canEditGame();
 
-  const quarterCards = [];
+  let html = '';
   for (let q = 1; q <= 4; q++) {
     const qShifts = state.computedShifts.filter(s => s.quarter === q);
-    const fullSub = isQuarterFullSub(q);
-    const visibleShifts = fullSub ? qShifts.slice(0, 1) : qShifts;
+    const isFullQtr = state.shiftsPerQuarter === 1 || !!state.fullQuarterLocks[q];
+    const isActiveClockQuarter = timer.quarter === q;
+    const isPreviewQuarter = viewedQ === q && viewedQ !== timer.quarter;
 
-    const isClockQ = q === timer.quarter;
-    const isPreviewQ = q === viewedQ && viewedQ !== timer.quarter;
+    const visibleShifts = (state.shiftsPerQuarter === 2 && state.fullQuarterLocks[q] && qShifts.length > 0)
+      ? [qShifts[0]]
+      : qShifts;
 
-    const cardBorder = isClockQ
-      ? 'border-emerald-500/60 ring-1 ring-emerald-500/30'
-      : isPreviewQ
-      ? 'border-sky-500/60 ring-1 ring-sky-500/30'
-      : 'border-slate-800';
+    const cardBorderClass = isActiveClockQuarter
+      ? 'bg-slate-900 border-emerald-500 ring-2 ring-emerald-500/30'
+      : isPreviewQuarter
+        ? 'bg-slate-900 border-sky-500 ring-2 ring-sky-500/30'
+        : 'bg-slate-900 border-slate-800';
 
-    let headerBadge = '';
-    if (isClockQ) {
-      headerBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">🟢 ACTIVE CLOCK</span>`;
-    } else if (isPreviewQ) {
-      headerBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-sky-500/20 text-sky-300 border border-sky-500/40">👀 PREVIEWING</span>`;
-    }
-
-    const fullQtrToggleBtn = (state.shiftsPerQuarter === 2 && editable)
-      ? `<button onclick="toggleFullQuarterLock(${q})"
-           class="px-2 py-0.5 rounded-lg text-[11px] font-bold border transition ${
-             state.fullQuarterLocks[q]
-               ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-               : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-           }">
-           ${state.fullQuarterLocks[q] ? '🔒 Full Qtr (1.0)' : '⏱️ 2 Shifts (0.5)'}
-         </button>`
-      : '';
-
-    const shiftsHtml = visibleShifts.map(sh => {
-      const isCurrentActiveShift = activeClockShift && activeClockShift.index === sh.index;
-      const benchPlayers = presentPlayers.filter(p => sh.benchIds.includes(p.id));
-      const fieldPlayers = presentPlayers.filter(p => !sh.benchIds.includes(p.id));
-
-      const shiftTitle = fullSub
-        ? `Full Quarter (${fmtDurationLabel(state.quarterMins)})`
-        : sh.part === 1
-        ? `1st Shift (0:00–${fmtDurationLabel(state.quarterMins / 2)})`
-        : `2nd Shift (${fmtDurationLabel(state.quarterMins / 2)}–${fmtDurationLabel(state.quarterMins)})`;
-
-      const lockTag = sh.locked
-        ? `<span class="text-[10px] font-bold text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/40">🔒 Locked</span>`
-        : sh.isMidQtrPosSwapShift
-        ? `<span class="text-[10px] font-bold text-sky-300 bg-sky-500/15 px-1.5 py-0.5 rounded border border-sky-500/30">🔄 FWD⇄DEF Swap</span>`
-        : '';
-
-      const benchHtml = benchPlayers.length > 0
-        ? benchPlayers.map(p => `<span class="px-2 py-0.5 rounded-md pos-BENCH text-[11px] font-bold">${escapeHtml(formatPlayerBadge(p))}</span>`).join('')
-        : `<span class="text-[11px] text-emerald-400 font-medium">None (All Play)</span>`;
-
-      let posSummaryHtml = '';
-      if (state.trackPositions) {
-        const zoneOrder = ['FWD', 'MID', 'DEF', 'GK'];
-        const zoneChips = [];
-        zoneOrder.forEach(z => {
-          const zp = fieldPlayers.filter(p => (sh.positions[p.id] || 'MID') === z);
-          if (zp.length > 0) {
-            zp.forEach(p => {
-              zoneChips.push(`<span class="px-1.5 py-0.5 rounded text-[11px] font-semibold pos-${z}">${z}: ${escapeHtml(formatPlayerBadge(p))}</span>`);
-            });
-          }
-        });
-        posSummaryHtml = `<div class="flex flex-wrap gap-1 pt-1.5 border-t border-slate-800/80">${zoneChips.join('')}</div>`;
-      }
-
-      return `
-        <div ${editable ? `onclick="openEditModal(${sh.index})"` : ''}
-          class="rounded-xl p-3 border transition ${editable ? 'cursor-pointer hover:border-emerald-500/50' : ''} ${
-            isCurrentActiveShift
-              ? 'bg-emerald-950/30 border-emerald-500/50'
-              : 'bg-slate-950/80 border-slate-800/90'
-          } space-y-2">
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-xs font-extrabold ${isCurrentActiveShift ? 'text-emerald-300' : 'text-slate-200'}">
-              ${isCurrentActiveShift ? '▶ ' : ''}${shiftTitle}
-            </span>
-            <div class="flex items-center gap-1">
-              ${lockTag}
-              ${editable ? `<span class="text-[11px] text-slate-400">✏️</span>` : ''}
-            </div>
-          </div>
-
-          <div class="flex items-center flex-wrap gap-1.5 text-xs">
-            <span class="text-[11px] font-bold text-slate-400 mr-1">🪑 Bench:</span>
-            ${benchHtml}
-          </div>
-
-          ${posSummaryHtml}
-        </div>
-      `;
-    }).join('');
-
-    quarterCards.push(`
-      <div class="bg-slate-900 border ${cardBorder} rounded-2xl p-3.5 shadow-lg space-y-2.5">
-        <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
-          <div class="flex items-center gap-2">
-            <button onclick="selectViewedQuarter(${q})" class="font-extrabold text-sm text-white hover:text-emerald-400 transition">
+    html += `
+      <div class="rounded-2xl p-3.5 space-y-2.5 shadow-lg border transition ${cardBorderClass}">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <div class="flex items-center gap-2 flex-wrap">
+            <button onclick="selectViewedQuarter(${q})"
+              class="px-2 py-0.5 rounded-md font-extrabold text-xs transition ${
+                isActiveClockQuarter
+                  ? 'bg-emerald-500 text-slate-950 shadow'
+                  : isPreviewQuarter
+                    ? 'bg-sky-500 text-slate-950 shadow'
+                    : 'bg-emerald-500/20 text-emerald-300'
+              }">
               Quarter ${q}
             </button>
-            ${headerBadge}
+            <span class="text-[11px] text-slate-400">${qtrDurLabel}</span>
+            ${isActiveClockQuarter ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/40">🟢 ACTIVE CLOCK</span>` : ''}
+            ${isPreviewQuarter ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-extrabold border border-sky-500/40">👀 PREVIEWING</span>` : ''}
           </div>
-          ${fullQtrToggleBtn}
+          ${state.shiftsPerQuarter === 2 && editable ? `
+            <button onclick="toggleFullQuarter(${q})"
+              class="px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${
+                state.fullQuarterLocks[q]
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+              }">
+              ${state.fullQuarterLocks[q] ? '🔒 Full Qtr (1.0)' : 'Full Qtr (No Mid-Sub)'}
+            </button>
+          ` : (isFullQtr ? `<span class="text-[11px] text-slate-500 font-semibold">Full Qtr (1.0)</span>` : '')}
         </div>
+
         <div class="space-y-2">
-          ${shiftsHtml}
+          ${visibleShifts.map(shift => {
+            const benchNames = shift.benchIds.map(id => playerMap[id] || '').filter(Boolean);
+            let shiftLabel = '';
+            if (isFullQtr) {
+              shiftLabel = `Full Quarter (${qtrDurLabel} • 1.0 Qtr)`;
+            } else if (shift.part === 2 && shift.isMidQtrPosSwapShift) {
+              shiftLabel = `2nd ${shiftDurLabel} • 🔄 FWD ⇄ DEF Swap`;
+            } else {
+              shiftLabel = shift.part === 1 ? `1st ${shiftDurLabel} (0.5 Qtr)` : `2nd ${shiftDurLabel} (0.5 Qtr)`;
+            }
+
+            const isShiftActive = isActiveClockQuarter && (
+              isFullQtr || (activeShift && activeShift.index === shift.index)
+            );
+
+            const posGroups = { FWD: [], MID: [], DEF: [], GK: [] };
+            Object.entries(shift.positions || {}).forEach(([pid, pos]) => {
+              if (!shift.benchIds.includes(pid) && playerMap[pid]) {
+                if (!posGroups[pos]) posGroups[pos] = [];
+                posGroups[pos].push(playerMap[pid]);
+              }
+            });
+
+            return `
+              <div ${editable ? `onclick="openEditModal(${shift.index})"` : ''}
+                class="group ${editable ? 'cursor-pointer' : 'cursor-default'} rounded-xl p-2.5 border transition ${
+                  isShiftActive
+                    ? 'bg-emerald-950/35 border-emerald-400 ring-1 ring-emerald-400/50 shadow-md'
+                    : shift.locked
+                      ? 'bg-amber-500/10 border-amber-500/40'
+                      : 'bg-slate-950/60 border-slate-800/90'
+                }">
+                <div class="flex items-center justify-between mb-1.5">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-xs font-bold ${isShiftActive ? 'text-emerald-300' : 'text-slate-300'}">${shiftLabel}</span>
+                    ${isShiftActive ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-extrabold">▶ IN PLAY</span>` : ''}
+                    ${shift.locked ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">LOCKED</span>` : ''}
+                  </div>
+                  ${editable ? `<span class="text-[11px] text-emerald-400 group-hover:underline font-medium">✏️ Edit Actual</span>` : ''}
+                </div>
+
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">🪑 Out:</span>
+                  ${benchNames.length > 0
+                    ? benchNames.map(n => `<span class="px-2 py-0.5 rounded-md text-xs font-bold pos-BENCH">${escapeHtml(n)}</span>`).join('')
+                    : `<span class="text-xs text-slate-500 italic">None (All Play)</span>`
+                  }
+                </div>
+
+                ${state.trackPositions ? `
+                  <div class="mt-2 pt-2 border-t border-slate-800/70 grid grid-cols-2 gap-1.5 text-[11px]">
+                    ${posGroups.FWD.length ? `
+                      <div class="flex items-center gap-1 flex-wrap">
+                        <span class="font-bold text-rose-400">⚔️ FWD:</span>
+                        <span class="text-slate-200 font-medium">${posGroups.FWD.map(escapeHtml).join(', ')}</span>
+                      </div>
+                    ` : ''}
+                    ${posGroups.MID.length ? `
+                      <div class="flex items-center gap-1 flex-wrap">
+                        <span class="font-bold text-blue-400">⚡ MID:</span>
+                        <span class="text-slate-200 font-medium">${posGroups.MID.map(escapeHtml).join(', ')}</span>
+                      </div>
+                    ` : ''}
+                    ${posGroups.DEF.length ? `
+                      <div class="flex items-center gap-1 flex-wrap">
+                        <span class="font-bold text-emerald-400">🛡️ DEF:</span>
+                        <span class="text-slate-200 font-medium">${posGroups.DEF.map(escapeHtml).join(', ')}</span>
+                      </div>
+                    ` : ''}
+                    ${posGroups.GK.length ? `
+                      <div class="flex items-center gap-1 flex-wrap">
+                        <span class="font-bold text-amber-400">🧤 GK:</span>
+                        <span class="text-slate-200 font-medium">${posGroups.GK.map(escapeHtml).join(', ')}</span>
+                      </div>
+                    ` : ''}
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
-    `);
+    `;
   }
-
-  grid.innerHTML = quarterCards.join('');
+  grid.innerHTML = html;
 }
 
-// ============================================================================
-// 10. PLAYTIME & POSITION BALANCE MATRIX
-// ============================================================================
-export function computeCurrentGameQuarterCounts() {
-  const counts = {};
-  state.players.forEach(p => {
-    counts[p.id] = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0 };
-  });
-
-  const shiftWeight = getShiftQuarterWeight(state.shiftsPerQuarter);
-  const presentSet = new Set(state.players.filter(p => p.present).map(p => p.id));
-
-  state.computedShifts.forEach(sh => {
-    presentSet.forEach(pid => {
-      if (sh.benchIds.includes(pid)) {
-        counts[pid].BENCH = Math.round((counts[pid].BENCH + shiftWeight) * 100) / 100;
-      } else {
-        const pos = sh.positions[pid] || 'MID';
-        counts[pid][pos] = Math.round(((counts[pid][pos] || 0) + shiftWeight) * 100) / 100;
-      }
-    });
-  });
-
-  return counts;
+function toggleBalanceSort(col) {
+  if (!state.balanceSort) state.balanceSort = { col: 'order', dir: 'asc' };
+  if (state.balanceSort.col === col) {
+    state.balanceSort.dir = state.balanceSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    state.balanceSort.col = col;
+    state.balanceSort.dir = (col === 'name' || col === 'number') ? 'asc' : 'desc';
+  }
+  saveState(false);
+  renderBalanceTable();
 }
 
 function renderBalanceTable() {
   const tbody = document.getElementById('balanceTableBody');
-  if (!tbody) return;
+  const showGkCol = (state.slots.GK || 0) > 0;
+  const shiftWeight = getShiftQuarterWeight(state.shiftsPerQuarter);
+  const totalGameQuarters = 4.0;
 
-  const posCols = document.querySelectorAll('.pos-col');
-  posCols.forEach(el => {
-    el.classList.toggle('hidden', !state.trackPositions);
-  });
-
-  const gkHeader = document.getElementById('gkHeaderCell');
-  const showGk = state.trackPositions && ((state.slots.GK || 0) > 0 || state.players.some(p => (p.prior.GK || 0) > 0));
-  if (gkHeader) {
-    gkHeader.classList.toggle('hidden', !showGk);
-  }
-
-  const gameCounts = computeCurrentGameQuarterCounts();
-  const rows = state.players.map((p, idx) => {
-    const gc = gameCounts[p.id] || { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0 };
-    const playQtrs = p.present ? Math.max(0, 4 - gc.BENCH) : 0;
-    const playPct = p.present ? Math.round((playQtrs / 4) * 100) : 0;
-    return {
-      player: p,
-      idx,
-      gc,
-      playPct,
-      totBench: (p.prior.BENCH || 0) + gc.BENCH,
-      totFWD: (p.prior.FWD || 0) + gc.FWD,
-      totMID: (p.prior.MID || 0) + gc.MID,
-      totDEF: (p.prior.DEF || 0) + gc.DEF,
-      totGK: (p.prior.GK || 0) + gc.GK
-    };
-  });
-
-  const sortCol = (state.balanceSort && state.balanceSort.col) || 'order';
-  const sortDir = (state.balanceSort && state.balanceSort.dir) === 'desc' ? -1 : 1;
-
-  ['number', 'name', 'BENCH', 'FWD', 'MID', 'DEF', 'GK', 'playPct'].forEach(col => {
-    const ind = document.getElementById(`balSort_${col}`);
-    if (ind) {
-      ind.textContent = sortCol === col ? (sortDir === 1 ? '▲' : '▼') : '';
+  document.getElementById('gkHeaderCell').style.display = (state.trackPositions && showGkCol) ? '' : 'none';
+  document.querySelectorAll('.pos-col').forEach(el => {
+    if (el.id !== 'gkHeaderCell') {
+      el.style.display = state.trackPositions ? '' : 'none';
     }
   });
 
-  rows.sort((a, b) => {
-    if (a.player.present !== b.player.present) return a.player.present ? -1 : 1;
-    if (sortCol === 'number') return comparePlayerNumbers(a.player, b.player) * sortDir;
-    if (sortCol === 'name') return (a.player.name || '').localeCompare(b.player.name || '') * sortDir;
-    if (sortCol === 'BENCH') return (a.gc.BENCH - b.gc.BENCH || a.totBench - b.totBench) * sortDir;
-    if (sortCol === 'FWD') return (a.gc.FWD - b.gc.FWD || a.totFWD - b.totFWD) * sortDir;
-    if (sortCol === 'MID') return (a.gc.MID - b.gc.MID || a.totMID - b.totMID) * sortDir;
-    if (sortCol === 'DEF') return (a.gc.DEF - b.gc.DEF || a.totDEF - b.totDEF) * sortDir;
-    if (sortCol === 'GK') return (a.gc.GK - b.gc.GK || a.totGK - b.totGK) * sortDir;
-    if (sortCol === 'playPct') return (a.playPct - b.playPct) * sortDir;
-    return (a.idx - b.idx) * sortDir;
+  const sortCol = (state.balanceSort && state.balanceSort.col) || 'order';
+  const sortDir = (state.balanceSort && state.balanceSort.dir) || 'asc';
+  ['number', 'name', 'BENCH', 'FWD', 'MID', 'DEF', 'GK', 'playPct'].forEach(c => {
+    const ind = document.getElementById('balSort_' + c);
+    if (ind) ind.textContent = sortCol === c ? (sortDir === 'asc' ? '▲' : '▼') : '';
   });
 
-  if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="py-4 text-center text-slate-500 italic">No players on roster.</td></tr>`;
+  const presentPlayers = state.players.filter(p => p.present);
+  if (presentPlayers.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="py-3 text-center text-slate-500 italic">No active players yet.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = rows.map(r => {
-    const p = r.player;
-    const gc = r.gc;
-    const priorB = p.prior.BENCH || 0;
-    const rowOpacity = p.present ? '' : 'opacity-45';
+  const rows = presentPlayers.map((p, idx) => {
+    const counts = { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0 };
+    state.computedShifts.forEach(s => {
+      if (s.benchIds.includes(p.id)) {
+        counts.BENCH = Math.round((counts.BENCH + shiftWeight) * 100) / 100;
+      } else {
+        const pos = s.positions[p.id] || 'MID';
+        counts[pos] = Math.round(((counts[pos] || 0) + shiftWeight) * 100) / 100;
+      }
+    });
 
-    const fmtCell = (todayVal, priorVal, colorCls = 'text-slate-200') => {
-      if (!p.present) return `<span class="text-slate-600">-</span>`;
-      const priorTag = priorVal > 0 ? `<span class="text-[10px] text-slate-500 ml-0.5">(+${fmtNum(priorVal)})</span>` : '';
-      return `<span class="mono font-bold ${colorCls}">${fmtNum(todayVal)}</span>${priorTag}`;
+    const playedQuarters = Math.max(0, totalGameQuarters - counts.BENCH);
+    const playPct = Math.round((playedQuarters / totalGameQuarters) * 100);
+
+    return { player: p, idx, counts, playPct };
+  });
+
+  rows.sort((a, b) => {
+    let cmp = 0;
+    if (sortCol === 'name') {
+      cmp = (a.player.name || '').localeCompare(b.player.name || '');
+    } else if (sortCol === 'number') {
+      cmp = comparePlayerNumbers(a.player, b.player);
+    } else if (sortCol === 'playPct') {
+      cmp = a.playPct - b.playPct;
+    } else if (['BENCH', 'FWD', 'MID', 'DEF', 'GK'].includes(sortCol)) {
+      const totA = (a.counts[sortCol] || 0) + (a.player.prior[sortCol] || 0);
+      const totB = (b.counts[sortCol] || 0) + (b.player.prior[sortCol] || 0);
+      cmp = totA !== totB ? totA - totB : (a.counts[sortCol] || 0) - (b.counts[sortCol] || 0);
+    } else {
+      cmp = a.idx - b.idx;
+    }
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  tbody.innerHTML = rows.map(({ player: p, counts, playPct }) => {
+    const fmtCell = (zone) => {
+      const today = counts[zone] || 0;
+      const season = Math.round((today + (p.prior[zone] || 0)) * 100) / 100;
+      return p.prior[zone]
+        ? `<span class="font-bold text-white">${fmtNum(today)}</span> <span class="text-slate-500">(${fmtNum(season)})</span>`
+        : `<span class="font-bold text-white">${fmtNum(today)}</span>`;
     };
 
     return `
-      <tr class="${rowOpacity}">
-        <td class="py-2 pr-1 mono font-bold text-slate-400">${escapeHtml(p.number || '-')}</td>
-        <td class="py-2 pr-2 font-bold text-white">${escapeHtml(p.name)} ${!p.present ? '<span class="text-[10px] text-rose-400 font-normal">(Out)</span>' : ''}</td>
-        <td class="py-2 px-2 text-center">${fmtCell(gc.BENCH, priorB, 'text-slate-200')}</td>
+      <tr>
+        <td class="py-2 pr-1 mono text-emerald-300 font-bold">${p.number ? '#' + escapeHtml(p.number) : '-'}</td>
+        <td class="py-2 pr-2 font-bold text-white">${escapeHtml(p.name)}</td>
+        <td class="py-2 px-2 text-center mono">${fmtCell('BENCH')}</td>
         ${state.trackPositions ? `
-          <td class="py-2 px-2 text-center">${fmtCell(gc.FWD, p.prior.FWD || 0, 'text-rose-300')}</td>
-          <td class="py-2 px-2 text-center">${fmtCell(gc.MID, p.prior.MID || 0, 'text-blue-300')}</td>
-          <td class="py-2 px-2 text-center">${fmtCell(gc.DEF, p.prior.DEF || 0, 'text-emerald-300')}</td>
-          ${showGk ? `<td class="py-2 px-2 text-center">${fmtCell(gc.GK, p.prior.GK || 0, 'text-amber-300')}</td>` : ''}
+          <td class="py-2 px-2 text-center mono text-rose-300">${fmtCell('FWD')}</td>
+          <td class="py-2 px-2 text-center mono text-blue-300">${fmtCell('MID')}</td>
+          <td class="py-2 px-2 text-center mono text-emerald-300">${fmtCell('DEF')}</td>
+          ${showGkCol ? `<td class="py-2 px-2 text-center mono text-amber-300">${fmtCell('GK')}</td>` : ''}
         ` : ''}
-        <td class="py-2 pl-2 text-right mono font-extrabold ${r.playPct >= 75 ? 'text-emerald-400' : r.playPct >= 50 ? 'text-amber-300' : 'text-rose-400'}">
-          ${p.present ? `${r.playPct}%` : '0%'}
-        </td>
+        <td class="py-2 pl-2 text-right mono font-bold text-emerald-400">${playPct}%</td>
       </tr>
     `;
   }).join('');
 }
 
 // ============================================================================
-// 11. 1-TAP SMS / RCS SCHEDULE GENERATOR
+// SEASON STATS & CLICKABLE / EDITABLE GAME HISTORY VIEWER
 // ============================================================================
-function buildSmsMessagesArray() {
-  const presentPlayers = state.players.filter(p => p.present);
-  if (presentPlayers.length === 0) return [];
-
-  const bubbles = [];
-  for (let q = 1; q <= 4; q++) {
-    const fullSub = isQuarterFullSub(q);
-    const qShifts = state.computedShifts.filter(s => s.quarter === q);
-    const visibleShifts = fullSub ? qShifts.slice(0, 1) : qShifts;
-
-    const lines = [`⚽ ${state.teamName} — Q${q}`];
-    visibleShifts.forEach(sh => {
-      const prefix = fullSub ? 'Full Qtr' : (sh.part === 1 ? '1st Half' : '2nd Half');
-      const benchNames = presentPlayers.filter(p => sh.benchIds.includes(p.id)).map(formatPlayerBadge).join(', ') || 'None';
-      lines.push(`${prefix} 🪑 Bench: ${benchNames}`);
-
-      if (state.smsStyle === 'positions' && state.trackPositions) {
-        const fieldPlayers = presentPlayers.filter(p => !sh.benchIds.includes(p.id));
-        const posParts = [];
-        ['FWD', 'MID', 'DEF', 'GK'].forEach(z => {
-          const zp = fieldPlayers.filter(p => (sh.positions[p.id] || 'MID') === z).map(formatPlayerBadge);
-          if (zp.length > 0) posParts.push(`${z}: ${zp.join(', ')}`);
-        });
-        if (posParts.length > 0) {
-          lines.push(`  📍 ${posParts.join(' | ')}`);
-        }
-      }
-    });
-    bubbles.push(lines.join('\n'));
-  }
-  return bubbles;
-}
-
-function renderSmsBubbles() {
-  const container = document.getElementById('smsBubblesContainer');
-  if (!container) return;
-
-  const btnCompact = document.getElementById('smsBtnCompact');
-  const btnPos = document.getElementById('smsBtnPositions');
-  if (btnCompact && btnPos) {
-    btnCompact.className = state.smsStyle === 'compact'
-      ? 'px-2.5 py-1 rounded-lg text-xs font-bold border bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-      : 'px-2.5 py-1 rounded-lg text-xs font-semibold border bg-slate-800 text-slate-400 border-slate-700';
-    btnPos.className = state.smsStyle === 'positions'
-      ? 'px-2.5 py-1 rounded-lg text-xs font-bold border bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-      : 'px-2.5 py-1 rounded-lg text-xs font-semibold border bg-slate-800 text-slate-400 border-slate-700';
-  }
-
-  const bubbles = buildSmsMessagesArray();
-  if (bubbles.length === 0) {
-    container.innerHTML = `<div class="text-xs text-slate-500 italic text-center py-2">Check in players to generate copy-ready text bubbles.</div>`;
-    return;
-  }
-
-  container.innerHTML = bubbles.map((txt, idx) => `
-    <div onclick="copySingleSms(${idx})" id="smsBubble_${idx}"
-      class="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800/90 border border-slate-800 cursor-pointer transition flex items-start justify-between gap-2">
-      <pre class="text-xs text-slate-200 whitespace-pre-wrap font-sans leading-relaxed">${escapeHtml(txt)}</pre>
-      <span class="text-[11px] font-bold text-emerald-400 shrink-0">📋 Copy</span>
-    </div>
-  `).join('');
-}
-
-// ============================================================================
-// 12. TAB 2: SEASON STATS LEADERBOARD & GAME HISTORY
-// ============================================================================
-function renderStatsAndHistoryTab() {
-  // 1. Season Record & Goal Totals
-  let wins = 0, losses = 0, draws = 0, gf = 0, ga = 0;
-  (state.gameHistory || []).forEach(g => {
-    const our = Number(g.ourScore) || 0;
-    const opp = Number(g.oppScore) || 0;
-    gf += our;
-    ga += opp;
-    if (our > opp) wins++;
-    else if (our < opp) losses++;
-    else draws++;
-  });
-
-  const recEl = document.getElementById('statRecord');
-  const gfEl = document.getElementById('statGoalsFor');
-  const gaEl = document.getElementById('statGoalsAgainst');
-  const gdEl = document.getElementById('statGoalDiff');
-
-  if (recEl) recEl.textContent = `${wins}-${losses}-${draws}`;
-  if (gfEl) gfEl.textContent = gf;
-  if (gaEl) gaEl.textContent = ga;
-  if (gdEl) {
-    const diff = gf - ga;
-    gdEl.textContent = diff > 0 ? `+${diff}` : String(diff);
-  }
-
-  // 2. Season Player Leaderboard
-  const tbody = document.getElementById('seasonStatsTableBody');
-  if (tbody) {
-    const rows = state.players.map((p, idx) => {
-      const gp = Number(p.prior.gamesPlayed) || 0;
-      const g = Number(p.prior.goals) || 0;
-      const a = Number(p.prior.assists) || 0;
-      const pts = (g * 2) + a;
-      const bench = Number(p.prior.BENCH) || 0;
-      return { player: p, idx, gp, g, a, pts, bench };
-    });
-
-    const sortCol = (state.statsSort && state.statsSort.col) || 'pts';
-    const sortDir = (state.statsSort && state.statsSort.dir) === 'asc' ? 1 : -1;
-
-    ['number', 'name', 'gamesPlayed', 'goals', 'assists', 'pts', 'BENCH'].forEach(col => {
-      const ind = document.getElementById(`stSort_${col}`);
-      if (ind) ind.textContent = sortCol === col ? (sortDir === 1 ? '▲' : '▼') : '';
-    });
-
-    rows.sort((a, b) => {
-      if (sortCol === 'number') return comparePlayerNumbers(a.player, b.player) * sortDir;
-      if (sortCol === 'name') return (a.player.name || '').localeCompare(b.player.name || '') * sortDir;
-      if (sortCol === 'gamesPlayed') return (a.gp - b.gp) * sortDir;
-      if (sortCol === 'goals') return (a.g - b.g || a.pts - b.pts) * sortDir;
-      if (sortCol === 'assists') return (a.a - b.a || a.pts - b.pts) * sortDir;
-      if (sortCol === 'pts') return (a.pts - b.pts || a.g - b.g) * sortDir;
-      if (sortCol === 'BENCH') return (a.bench - b.bench) * sortDir;
-      return (a.idx - b.idx) * sortDir;
-    });
-
-    if (rows.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" class="py-4 text-center text-slate-500 italic">No players on roster.</td></tr>`;
-    } else {
-      tbody.innerHTML = rows.map(r => {
-        const p = r.player;
-        const posStr = `${fmtNum(p.prior.FWD || 0)} / ${fmtNum(p.prior.MID || 0)} / ${fmtNum(p.prior.DEF || 0)} / ${fmtNum(p.prior.GK || 0)}`;
-        return `
-          <tr>
-            <td class="py-2 pr-1 mono font-bold text-slate-400">${escapeHtml(p.number || '-')}</td>
-            <td class="py-2 pr-2 font-bold text-white">${escapeHtml(p.name)}</td>
-            <td class="py-2 px-2 text-center mono text-slate-300">${r.gp}</td>
-            <td class="py-2 px-2 text-center mono font-bold text-emerald-400">${r.g}</td>
-            <td class="py-2 px-2 text-center mono font-bold text-blue-400">${r.a}</td>
-            <td class="py-2 px-2 text-center mono font-extrabold text-amber-300">${r.pts}</td>
-            <td class="py-2 px-2 text-center mono text-slate-300">${fmtNum(r.bench)}</td>
-            <td class="py-2 pl-2 text-right mono text-slate-400">${posStr}</td>
-          </tr>
-        `;
-      }).join('');
-    }
-  }
-
-  // 3. Completed Game History List
-  const histList = document.getElementById('gameHistoryList');
-  if (histList) {
-    const games = state.gameHistory || [];
-    if (games.length === 0) {
-      histList.innerHTML = `<div class="text-xs text-slate-500 italic py-4 text-center">No completed games archived yet. Use "✅ Complete & Save Game" at the bottom of the Live Game tab after a match.</div>`;
-    } else {
-      histList.innerHTML = games.map(g => {
-        const our = Number(g.ourScore) || 0;
-        const opp = Number(g.oppScore) || 0;
-        const resBadge = our > opp
-          ? `<span class="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-extrabold text-xs">W ${our}-${opp}</span>`
-          : our < opp
-          ? `<span class="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/40 font-extrabold text-xs">L ${our}-${opp}</span>`
-          : `<span class="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 font-extrabold text-xs">D ${our}-${opp}</span>`;
-
-        const goalPills = (g.goals || []).map(gl => {
-          const s = escapeHtml(gl.scorerLabel || getPlayerDisplayById(gl.scorerId));
-          const a = gl.assistId ? ` (A: ${escapeHtml(gl.assistLabel || getPlayerDisplayById(gl.assistId))})` : '';
-          return `<span class="inline-block px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-[11px] text-slate-300">⚽ ${s}${a}</span>`;
-        }).join(' ');
-
-        return `
-          <div onclick="openGameDetailModal('${g.id}')"
-            class="bg-slate-950/80 hover:bg-slate-950 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-3.5 cursor-pointer transition space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 min-w-0">
-                ${resBadge}
-                <span class="font-extrabold text-sm text-white truncate">${escapeHtml(g.teamName || state.teamName)} vs ${escapeHtml(g.opponent || 'Opponent')}</span>
-              </div>
-              <span class="text-[11px] text-slate-400 shrink-0">${escapeHtml(g.date || '')} ✏️</span>
-            </div>
-            ${goalPills ? `<div class="flex flex-wrap gap-1">${goalPills}</div>` : ''}
-          </div>
-        `;
-      }).join('');
-    }
-  }
-}
-
-// ============================================================================
-// INTERACTIVE CONTROLLERS & WINDOW HANDLERS
-// ============================================================================
-
-export function switchMainTab(tab) {
-  currentMainTab = tab === 'stats' ? 'stats' : 'game';
-  renderAll();
-}
-
-export function toggleDrawer(drawerId) {
-  const el = document.getElementById(drawerId);
-  if (!el) return;
-  el.classList.toggle('hidden');
-}
-
-export function handleTeamSelectChange(teamId) {
-  if (!isHeadCoach()) return;
-  const found = appStore.teams.find(t => t.id === teamId);
-  if (!found) return;
-  appStore.activeTeamId = found.id;
-  syncActiveTeamPointer();
-  applyCloudTimerState();
-  recalculateSchedule(false);
-  saveState(false);
-  subscribeToActiveTeamCloud();
-  renderAll();
-}
-
-export function createNewTeamPrompt() {
-  if (!isHeadCoach()) return;
-  const name = prompt('Enter new team name:', `Team ${appStore.teams.length + 1}`);
-  if (!name || !name.trim()) return;
-  const newTeam = createBlankTeam(name.trim());
-  appStore.teams.push(newTeam);
-  appStore.activeTeamId = newTeam.id;
-  syncActiveTeamPointer();
-  resetTimer(false);
-  recalculateSchedule(true);
-  subscribeToActiveTeamCloud();
-  renderAll();
-}
-
-export function deleteCurrentTeam() {
-  if (!isHeadCoach() || appStore.teams.length <= 1) return;
-  if (!confirm(`Delete team "${state.teamName}" from this device?`)) return;
-  appStore.teams = appStore.teams.filter(t => t.id !== state.id);
-  appStore.activeTeamId = appStore.teams[0].id;
-  syncActiveTeamPointer();
-  applyCloudTimerState();
-  recalculateSchedule(false);
-  saveState(false);
-  subscribeToActiveTeamCloud();
-  renderAll();
-}
-
-export function updateTeamName(val) {
-  if (!canEditGame()) return;
-  const clean = (val || '').trim() || 'My Team';
-  state.teamName = clean;
-  saveState(true);
-  renderAll();
-}
-
-export function handleFormationChange(presetKey) {
-  if (!canEditGame()) return;
-  const preset = FORMATION_PRESETS[presetKey];
-  if (!preset) return;
-  state.formationKey = presetKey;
-  state.slots = { ...preset.slots };
-  state.lockedShifts = {};
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function handleQuarterSelectChange(val) {
-  if (!canEditGame()) return;
-  const customInp = document.getElementById('customQuarterMinsInput');
-  if (val === 'custom') {
-    if (customInp) {
-      customInp.classList.remove('hidden');
-      customInp.value = state.quarterMins;
-      customInp.focus();
-    }
-    return;
-  }
-  const num = parseFloat(val) || 8;
-  state.quarterMins = num;
-  if (!timer.running) {
-    timer.secondsLeft = getQuarterTotalSeconds(num);
-  }
-  syncTimerToStateAndCloud();
-  renderAll();
-}
-
-export function handleCustomQuarterInput(val) {
-  if (!canEditGame()) return;
-  const num = Math.max(1, Math.min(60, parseFloat(val) || 8));
-  state.quarterMins = num;
-  if (!timer.running) {
-    timer.secondsLeft = getQuarterTotalSeconds(num);
-  }
-  syncTimerToStateAndCloud();
-  renderAll();
-}
-
-export function handleTimingChange() {
-  if (!canEditGame()) return;
-  const sel = document.getElementById('shiftsPerQtrSelect');
-  if (!sel) return;
-  const val = sel.value;
-  if (val === '1') {
-    state.shiftsPerQuarter = 1;
-    state.midQtrPosSwap = false;
-  } else if (val === '2_swap') {
-    state.shiftsPerQuarter = 2;
-    state.midQtrPosSwap = true;
-  } else {
-    state.shiftsPerQuarter = 2;
-    state.midQtrPosSwap = false;
-  }
-  state.lockedShifts = {};
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function adjustSlot(zone, delta) {
-  if (!canEditGame()) return;
-  const current = state.slots[zone] || 0;
-  const next = Math.max(0, Math.min(11, current + delta));
-  state.slots[zone] = next;
-  state.lockedShifts = {};
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function togglePositionMode() {
-  if (!canEditGame()) return;
-  state.trackPositions = !state.trackPositions;
-  saveState(true);
-  renderAll();
-}
-
-function createPlayerObject(name, number) {
-  return {
-    id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-    name: name.trim(),
-    number: (number || '').trim(),
-    present: true,
-    rsvp: null,
-    prior: {
-      BENCH: 0,
-      FWD: 0,
-      MID: 0,
-      DEF: 0,
-      GK: 0,
-      gamesPlayed: 0,
-      goals: 0,
-      assists: 0,
-      manualBenchOverride: false
-    }
-  };
-}
-
-export function addPlayer() {
-  if (!canEditGame()) return;
-  const numInp = document.getElementById('newPlayerNumberInput');
-  const nameInp = document.getElementById('newPlayerInput');
-  const name = (nameInp ? nameInp.value : '').trim();
-  const num = (numInp ? numInp.value : '').trim();
-  if (!name) return;
-
-  state.players.push(createPlayerObject(name, num));
-  if (nameInp) nameInp.value = '';
-  if (numInp) numInp.value = '';
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function addPlayerFromOnboarding() {
-  if (!canEditGame()) return;
-  const numInp = document.getElementById('onboardPlayerNum');
-  const nameInp = document.getElementById('onboardPlayerName');
-  const name = (nameInp ? nameInp.value : '').trim();
-  const num = (numInp ? numInp.value : '').trim();
-  if (!name) return;
-
-  state.players.push(createPlayerObject(name, num));
-  if (nameInp) {
-    nameInp.value = '';
-    nameInp.focus();
-  }
-  if (numInp) numInp.value = '';
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function updatePlayerNumber(playerId, val) {
-  if (!canEditGame()) return;
-  const p = state.players.find(x => x.id === playerId);
-  if (!p) return;
-  p.number = (val || '').trim();
-  saveState(true);
-  renderAll();
-}
-
-export function updatePlayerName(playerId, val) {
-  if (!canEditGame()) return;
-  const p = state.players.find(x => x.id === playerId);
-  if (!p || !val.trim()) return;
-  p.name = val.trim();
-  saveState(true);
-  renderAll();
-}
-
-export function updatePlayerPriorBench(playerId, val) {
-  if (!canEditGame()) return;
-  const p = state.players.find(x => x.id === playerId);
-  if (!p) return;
-  p.prior.BENCH = Math.max(0, parseFloat(val) || 0);
-  p.prior.manualBenchOverride = true;
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function removePlayer(playerId) {
-  if (!canEditGame()) return;
-  const p = state.players.find(x => x.id === playerId);
-  if (!p) return;
-  if (!confirm(`Remove ${formatPlayerBadge(p)} from roster?`)) return;
-  state.players = state.players.filter(x => x.id !== playerId);
-  state.lockedShifts = {};
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function resetSeasonHistory() {
-  if (!canEditGame()) return;
-  if (!confirm('Reset all prior season bench, position, goal, and assist counts to 0 for this team?')) return;
-  state.players.forEach(p => {
-    p.prior = {
-      BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0,
-      gamesPlayed: 0, goals: 0, assists: 0,
-      manualBenchOverride: false
-    };
-  });
-  state.gameHistory = [];
-  recalculateSchedule(true);
-  renderAll();
-}
-
-// Parent RSVP Actions
-export function selectParentIdentity(playerId) {
-  localStorage.setItem(getParentStorageKey(), playerId);
-  renderParentRsvpCard();
-}
-
-export function clearParentIdentity() {
-  localStorage.removeItem(getParentStorageKey());
-  renderParentRsvpCard();
-}
-
-export async function submitParentRsvp(status) {
-  const savedPlayerId = localStorage.getItem(getParentStorageKey());
-  const p = state.players.find(x => x.id === savedPlayerId);
-  if (!p) return;
-
-  p.rsvp = status;
-  p.present = status !== 'out';
-  recalculateSchedule(false);
-  saveState(false);
-  await pushActiveTeamToCloud(true);
-  renderAll();
-}
-
-// Attendance & Roster Sorting
-export function toggleAttendance(playerId) {
-  if (!canEditGame()) return;
-  const p = state.players.find(x => x.id === playerId);
-  if (!p) return;
-  p.present = !p.present;
-  p.rsvp = p.present ? 'going' : 'out';
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function setAllAttendance(presentVal) {
-  if (!canEditGame()) return;
-  state.players.forEach(p => {
-    p.present = Boolean(presentVal);
-    p.rsvp = p.present ? 'going' : 'out';
-  });
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function rotateStarterOrder() {
-  if (!canEditGame() || state.players.length <= 1) return;
-  const first = state.players.shift();
-  state.players.push(first);
-  state.rosterSort = 'order';
-  state.lockedShifts = {};
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function setRosterSort(mode) {
-  state.rosterSort = mode;
-  saveState(false);
-  renderAll();
-}
-
-// Viewed Shift Part & Queued Sub Alert Activation
-export function setViewedShiftPart(part) {
-  viewedShiftPartOverride = part;
-  renderLiveInPlayPanel();
-}
-
-export function activateQueuedSubNow(shiftIdx) {
-  if (!canEditGame()) return;
-  triggerSubAlertForShift(shiftIdx);
-  playAlertSignal(2);
-  syncTimerToStateAndCloud();
-  renderAll();
-}
-
-export function toggleFullQuarterLock(quarter) {
-  if (!canEditGame()) return;
-  state.fullQuarterLocks[quarter] = !state.fullQuarterLocks[quarter];
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function clearAllLocks() {
-  if (!canEditGame()) return;
-  state.lockedShifts = {};
-  state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
-  recalculateSchedule(true);
-  renderAll();
-}
-
-// Table Sorting
-export function toggleBalanceSort(col) {
-  if (!state.balanceSort) state.balanceSort = { col: 'order', dir: 'asc' };
-  if (state.balanceSort.col === col) {
-    state.balanceSort.dir = state.balanceSort.dir === 'asc' ? 'desc' : 'asc';
-  } else {
-    state.balanceSort.col = col;
-    state.balanceSort.dir = col === 'playPct' ? 'desc' : 'asc';
-  }
-  renderBalanceTable();
-}
-
-export function toggleStatsSort(col) {
+function toggleStatsSort(col) {
   if (!state.statsSort) state.statsSort = { col: 'pts', dir: 'desc' };
   if (state.statsSort.col === col) {
     state.statsSort.dir = state.statsSort.dir === 'asc' ? 'desc' : 'asc';
@@ -1823,393 +1346,211 @@ export function toggleStatsSort(col) {
     state.statsSort.col = col;
     state.statsSort.dir = (col === 'name' || col === 'number') ? 'asc' : 'desc';
   }
+  saveState(false);
   renderStatsAndHistoryTab();
 }
 
-// SMS Copy
-export function setSmsStyle(style) {
-  state.smsStyle = style;
-  saveState(true);
-  renderSmsBubbles();
-}
+function renderStatsAndHistoryTab() {
+  let wins = 0, losses = 0, draws = 0, gf = 0, ga = 0;
+  state.gameHistory.forEach(g => {
+    gf += Number(g.ourScore) || 0;
+    ga += Number(g.oppScore) || 0;
+    if (g.ourScore > g.oppScore) wins++;
+    else if (g.ourScore < g.oppScore) losses++;
+    else draws++;
+  });
 
-export async function copySingleSms(idx) {
-  const bubbles = buildSmsMessagesArray();
-  const text = bubbles[idx];
-  if (!text) return;
-  try {
-    await navigator.clipboard.writeText(text);
-    const el = document.getElementById(`smsBubble_${idx}`);
-    if (el) {
-      const span = el.querySelector('span');
-      if (span) {
-        const orig = span.textContent;
-        span.textContent = '✅ Copied!';
-        setTimeout(() => { span.textContent = orig; }, 1500);
+  const diff = gf - ga;
+  document.getElementById('statRecord').textContent = `${wins}-${losses}-${draws}`;
+  document.getElementById('statGoalsFor').textContent = gf;
+  document.getElementById('statGoalsAgainst').textContent = ga;
+  document.getElementById('statGoalDiff').textContent = diff > 0 ? `+${diff}` : String(diff);
+
+  const sortCol = (state.statsSort && state.statsSort.col) || 'pts';
+  const sortDir = (state.statsSort && state.statsSort.dir) || 'desc';
+  ['number', 'name', 'gamesPlayed', 'goals', 'assists', 'pts', 'BENCH'].forEach(c => {
+    const el = document.getElementById('stSort_' + c);
+    if (el) el.textContent = sortCol === c ? (sortDir === 'asc' ? '▲' : '▼') : '';
+  });
+
+  const statsBody = document.getElementById('seasonStatsTableBody');
+  if (state.players.length === 0) {
+    statsBody.innerHTML = `<tr><td colspan="8" class="py-4 text-center text-slate-500 italic">No players in roster yet.</td></tr>`;
+  } else {
+    const sortedPlayers = [...state.players].sort((a, b) => {
+      let cmp = 0;
+      const ptsA = (a.prior.goals || 0) + (a.prior.assists || 0);
+      const ptsB = (b.prior.goals || 0) + (b.prior.assists || 0);
+
+      if (sortCol === 'name') cmp = (a.name || '').localeCompare(b.name || '');
+      else if (sortCol === 'number') cmp = comparePlayerNumbers(a, b);
+      else if (sortCol === 'gamesPlayed') cmp = (a.prior.gamesPlayed || 0) - (b.prior.gamesPlayed || 0);
+      else if (sortCol === 'goals') cmp = (a.prior.goals || 0) - (b.prior.goals || 0);
+      else if (sortCol === 'assists') cmp = (a.prior.assists || 0) - (b.prior.assists || 0);
+      else if (sortCol === 'BENCH') cmp = (a.prior.BENCH || 0) - (b.prior.BENCH || 0);
+      else {
+        cmp = ptsA !== ptsB ? ptsA - ptsB : (a.prior.goals || 0) - (b.prior.goals || 0);
       }
-    }
-  } catch (e) {
-    prompt('Copy text:', text);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+    statsBody.innerHTML = sortedPlayers.map(p => {
+      const g = p.prior.goals || 0;
+      const a = p.prior.assists || 0;
+      const pts = g + a;
+      const gp = p.prior.gamesPlayed || 0;
+      const bench = fmtNum(p.prior.BENCH || 0);
+      const posBreakdown = `${fmtNum(p.prior.FWD || 0)} / ${fmtNum(p.prior.MID || 0)} / ${fmtNum(p.prior.DEF || 0)} / ${fmtNum(p.prior.GK || 0)}`;
+
+      return `
+        <tr>
+          <td class="py-2.5 pr-1 mono text-emerald-300 font-bold">${p.number ? '#' + escapeHtml(p.number) : '-'}</td>
+          <td class="py-2.5 pr-2 font-bold text-white">${escapeHtml(p.name)}</td>
+          <td class="py-2.5 px-2 text-center mono text-slate-300">${gp}</td>
+          <td class="py-2.5 px-2 text-center mono font-bold text-emerald-400">${g}</td>
+          <td class="py-2.5 px-2 text-center mono font-bold text-blue-400">${a}</td>
+          <td class="py-2.5 px-2 text-center mono font-extrabold text-amber-300">${pts}</td>
+          <td class="py-2.5 px-2 text-center mono text-slate-300">${bench}</td>
+          <td class="py-2.5 pl-2 text-right mono text-slate-400">${posBreakdown}</td>
+        </tr>
+      `;
+    }).join('');
   }
-}
 
-export async function copyAllSms() {
-  const bubbles = buildSmsMessagesArray();
-  if (!bubbles.length) return;
-  const fullText = bubbles.join('\n\n');
-  const btn = document.getElementById('copyAllBtn');
-  try {
-    await navigator.clipboard.writeText(fullText);
-    if (btn) {
-      const orig = btn.textContent;
-      btn.textContent = '✅ Copied All!';
-      setTimeout(() => { btn.textContent = orig; }, 1800);
-    }
-  } catch (e) {
-    prompt('Copy schedule:', fullText);
-  }
-}
-
-// ============================================================================
-// SCOREBOARD & GOAL MODAL CONTROLLERS
-// ============================================================================
-export function updateOpponentName(val) {
-  if (!canEditGame()) return;
-  state.currentMatch.opponent = (val || '').trim() || 'Opponent';
-  saveState(true);
-  renderAll();
-}
-
-export function adjustOpponentScore(delta) {
-  if (!canEditGame()) return;
-  state.currentMatch.oppScore = Math.max(0, (Number(state.currentMatch.oppScore) || 0) + delta);
-  saveState(true);
-  renderAll();
-}
-
-export function openGoalModal() {
-  if (!canEditGame()) return;
-  const presentPlayers = state.players.filter(p => p.present);
-  goalDraft.scorerId = presentPlayers.length > 0 ? presentPlayers[0].id : 'OWN_GOAL';
-  goalDraft.assistId = null;
-  renderGoalModalChips();
-  document.getElementById('goalModal').classList.remove('hidden');
-}
-
-export function closeGoalModal() {
-  document.getElementById('goalModal').classList.add('hidden');
-}
-
-function renderGoalModalChips() {
-  const scorerContainer = document.getElementById('goalScorerChips');
-  const assistContainer = document.getElementById('goalAssistChips');
-  if (!scorerContainer || !assistContainer) return;
-
-  const presentPlayers = getSortedRosterPlayers().filter(p => p.present);
-
-  const scorerButtons = presentPlayers.map(p => {
-    const active = goalDraft.scorerId === p.id;
-    return `
-      <button onclick="selectGoalScorer('${p.id}')"
-        class="py-2 px-2.5 rounded-xl border text-xs font-bold text-left truncate transition ${
-          active
-            ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-extrabold shadow'
-            : 'bg-slate-950 text-slate-200 border-slate-800 hover:border-slate-700'
-        }">
-        ⚽ ${escapeHtml(formatPlayerBadge(p))}
-      </button>
+  const histContainer = document.getElementById('gameHistoryList');
+  if (state.gameHistory.length === 0) {
+    histContainer.innerHTML = `
+      <div class="text-xs text-slate-500 italic py-6 text-center bg-slate-950/50 rounded-xl border border-slate-800/70">
+        No completed games saved yet for ${escapeHtml(state.teamName)}.
+      </div>
     `;
-  });
-  scorerButtons.push(`
-    <button onclick="selectGoalScorer('OWN_GOAL')"
-      class="py-2 px-2.5 rounded-xl border text-xs font-bold text-left truncate transition ${
-        goalDraft.scorerId === 'OWN_GOAL'
-          ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-extrabold shadow'
-          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-      }">
-      🥅 Opponent Own Goal
-    </button>
-  `);
-  scorerContainer.innerHTML = scorerButtons.join('');
-
-  const assistButtons = [
-    `<button onclick="selectGoalAssist(null)"
-      class="py-2 px-2.5 rounded-xl border text-xs font-bold text-left truncate transition ${
-        goalDraft.assistId === null
-          ? 'bg-blue-500 text-slate-950 border-blue-400 font-extrabold shadow'
-          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-      }">
-      — Unassisted
-    </button>`
-  ];
-  presentPlayers.forEach(p => {
-    if (p.id === goalDraft.scorerId) return;
-    const active = goalDraft.assistId === p.id;
-    assistButtons.push(`
-      <button onclick="selectGoalAssist('${p.id}')"
-        class="py-2 px-2.5 rounded-xl border text-xs font-bold text-left truncate transition ${
-          active
-            ? 'bg-blue-500 text-slate-950 border-blue-400 font-extrabold shadow'
-            : 'bg-slate-950 text-slate-200 border-slate-800 hover:border-slate-700'
-        }">
-        👟 ${escapeHtml(formatPlayerBadge(p))}
-      </button>
-    `);
-  });
-  assistContainer.innerHTML = assistButtons.join('');
-}
-
-export function selectGoalScorer(scorerId) {
-  goalDraft.scorerId = scorerId;
-  if (goalDraft.assistId === scorerId) {
-    goalDraft.assistId = null;
-  }
-  renderGoalModalChips();
-}
-
-export function selectGoalAssist(assistId) {
-  goalDraft.assistId = assistId;
-  renderGoalModalChips();
-}
-
-export function confirmGoalLog() {
-  if (!canEditGame()) return;
-  const goalObj = {
-    id: 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-    quarter: timer.quarter,
-    clock: formatClockMMSS(timer.secondsLeft),
-    scorerId: goalDraft.scorerId,
-    assistId: goalDraft.assistId,
-    scorerLabel: getPlayerDisplayById(goalDraft.scorerId),
-    assistLabel: goalDraft.assistId ? getPlayerDisplayById(goalDraft.assistId) : null
-  };
-  state.currentMatch.goals.push(goalObj);
-  state.currentMatch.ourScore = (Number(state.currentMatch.ourScore) || 0) + 1;
-  closeGoalModal();
-  saveState(true);
-  renderAll();
-}
-
-export function deleteMatchGoal(goalId) {
-  if (!canEditGame()) return;
-  const idx = state.currentMatch.goals.findIndex(g => g.id === goalId);
-  if (idx === -1) return;
-  state.currentMatch.goals.splice(idx, 1);
-  state.currentMatch.ourScore = Math.max(0, (Number(state.currentMatch.ourScore) || 1) - 1);
-  saveState(true);
-  renderAll();
-}
-
-// ============================================================================
-// ON-THE-FLY SHIFT & POSITION OVERRIDE MODAL
-// ============================================================================
-export function openEditModal(shiftIndex) {
-  if (!canEditGame()) return;
-  const sh = state.computedShifts[shiftIndex];
-  if (!sh) return;
-
-  modalDraft.shiftIndex = shiftIndex;
-  modalDraft.benchIds = [...sh.benchIds];
-  modalDraft.positions = { ...sh.positions };
-
-  renderEditModalContent();
-  document.getElementById('editModal').classList.remove('hidden');
-}
-
-export function closeEditModal() {
-  document.getElementById('editModal').classList.add('hidden');
-}
-
-function renderEditModalContent() {
-  const sh = state.computedShifts[modalDraft.shiftIndex];
-  if (!sh) return;
-
-  const titleEl = document.getElementById('modalTitle');
-  if (titleEl) {
-    const fullSub = isQuarterFullSub(sh.quarter);
-    titleEl.textContent = fullSub
-      ? `Edit Q${sh.quarter} • Full Quarter`
-      : `Edit Q${sh.quarter} • ${sh.part === 1 ? '1st' : '2nd'} Shift`;
+    return;
   }
 
-  const presentPlayers = getSortedRosterPlayers().filter(p => p.present);
-  const expectedBench = Math.max(0, presentPlayers.length - getTotalFieldSlots());
-
-  const counterEl = document.getElementById('modalBenchCounter');
-  if (counterEl) {
-    const diff = modalDraft.benchIds.length - expectedBench;
-    const statusCls = diff === 0 ? 'text-emerald-400' : 'text-amber-300';
-    counterEl.innerHTML = `Sitting Out: <span class="${statusCls} font-extrabold">${modalDraft.benchIds.length}</span> (Target: ${expectedBench})`;
-  }
-
-  const randGkBtn = document.getElementById('modalRandomGkBtn');
-  if (randGkBtn) {
-    const showGk = state.trackPositions && (state.slots.GK || 0) > 0;
-    randGkBtn.classList.toggle('hidden', !showGk);
-  }
-
-  const listEl = document.getElementById('modalPlayerList');
-  if (!listEl) return;
-
-  const availZones = ['FWD', 'MID', 'DEF', 'GK'].filter(z => (state.slots[z] || 0) > 0);
-  if (availZones.length === 0) availZones.push('MID');
-
-  listEl.innerHTML = presentPlayers.map(p => {
-    const isBench = modalDraft.benchIds.includes(p.id);
-    const curPos = modalDraft.positions[p.id] || availZones[0];
-
-    const posButtons = (!isBench && state.trackPositions)
-      ? availZones.map(z => `
-          <button onclick="setModalPlayerPos('${p.id}', '${z}')"
-            class="px-2 py-1 rounded-lg text-xs font-extrabold transition ${
-              curPos === z ? `pos-${z} ring-1 ring-white/40` : 'bg-slate-900 text-slate-400 border border-slate-800'
-            }">
-            ${z}
-          </button>
-        `).join('')
-      : '';
+  histContainer.innerHTML = state.gameHistory.map(game => {
+    const isWin = game.ourScore > game.oppScore;
+    const isLoss = game.ourScore < game.oppScore;
+    const badgeClass = isWin
+      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+      : isLoss
+        ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+        : 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+    const resChar = isWin ? 'W' : isLoss ? 'L' : 'D';
 
     return `
-      <div class="flex items-center justify-between gap-2 bg-slate-950 border ${isBench ? 'border-slate-800' : 'border-emerald-500/30'} rounded-xl p-2.5">
-        <div class="font-bold text-xs ${isBench ? 'text-slate-400' : 'text-white'} truncate">
-          ${escapeHtml(formatPlayerBadge(p))}
+      <div onclick="openGameDetailModal('${game.id}')"
+        class="cursor-pointer group bg-slate-950/80 hover:bg-slate-950 border border-slate-800 hover:border-emerald-500/50 rounded-xl p-3.5 space-y-2 transition shadow">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-md text-xs font-extrabold border ${badgeClass}">${resChar}</span>
+            <span class="font-extrabold text-sm text-white">
+              ${escapeHtml(game.teamName)} <span class="text-emerald-400 mono">${game.ourScore}</span> - <span class="text-slate-300 mono">${game.oppScore}</span> ${escapeHtml(game.opponent)}
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-slate-400">${escapeHtml(game.date)}</span>
+            <span class="text-[11px] text-emerald-400 font-semibold group-hover:underline">${canEditGame() ? '✏️ View / Edit' : '📋 View Details'}</span>
+          </div>
         </div>
-        <div class="flex items-center gap-1.5 shrink-0">
-          ${posButtons}
-          <button onclick="toggleModalPlayerBench('${p.id}')"
-            class="px-2.5 py-1 rounded-lg text-xs font-extrabold border transition ${
-              isBench
-                ? 'pos-BENCH'
-                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-            }">
-            ${isBench ? '🪑 Bench' : '🟢 Field'}
-          </button>
-        </div>
+
+        ${game.goals && game.goals.length > 0 ? `
+          <div class="pt-1.5 border-t border-slate-800/70 flex flex-wrap gap-1.5">
+            ${game.goals.map(gl => `
+              <span class="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-[11px] text-slate-300">
+                ⚽ <strong>${escapeHtml(gl.scorerLabel)}</strong>
+                ${gl.assistLabel ? `<span class="text-slate-400">(Ast: ${escapeHtml(gl.assistLabel)})</span>` : ''}
+              </span>
+            `).join('')}
+          </div>
+        ` : `<div class="text-[11px] text-slate-500 italic">No team goals logged</div>`}
       </div>
     `;
   }).join('');
 }
 
-export function toggleModalPlayerBench(playerId) {
-  const idx = modalDraft.benchIds.indexOf(playerId);
-  if (idx >= 0) {
-    modalDraft.benchIds.splice(idx, 1);
-    if (!modalDraft.positions[playerId]) {
-      modalDraft.positions[playerId] = 'MID';
-    }
-  } else {
-    modalDraft.benchIds.push(playerId);
-  }
-  renderEditModalContent();
-}
+function finishAndSaveGame() {
+  if (!canEditGame() || state.players.length === 0) return;
 
-export function setModalPlayerPos(playerId, pos) {
-  modalDraft.positions[playerId] = pos;
-  renderEditModalContent();
-}
-
-export function rollRandomModalGoalie() {
-  const presentField = state.players.filter(p => p.present && !modalDraft.benchIds.includes(p.id));
-  if (presentField.length === 0) return;
-
-  // Clear current GK into DEF/MID first
-  presentField.forEach(p => {
-    if (modalDraft.positions[p.id] === 'GK') {
-      modalDraft.positions[p.id] = (state.slots.DEF || 0) > 0 ? 'DEF' : 'MID';
-    }
-  });
-
-  const pick = presentField[Math.floor(Math.random() * presentField.length)];
-  modalDraft.positions[pick.id] = 'GK';
-  renderEditModalContent();
-}
-
-export function unlockCurrentModalShift() {
-  if (modalDraft.shiftIndex === null) return;
-  delete state.lockedShifts[modalDraft.shiftIndex];
-  closeEditModal();
-  recalculateSchedule(true);
-  renderAll();
-}
-
-export function saveModalShift() {
-  if (modalDraft.shiftIndex === null) return;
-  state.lockedShifts[modalDraft.shiftIndex] = {
-    benchIds: [...modalDraft.benchIds],
-    positions: { ...modalDraft.positions }
-  };
-  closeEditModal();
-  recalculateSchedule(true);
-  renderAll();
-}
-
-// ============================================================================
-// COMPLETE & ARCHIVE GAME + PAST GAME HISTORY EDITOR MODAL
-// ============================================================================
-export function finishAndSaveGame() {
-  if (!canEditGame()) return;
   const presentPlayers = state.players.filter(p => p.present);
-  if (presentPlayers.length === 0) {
-    alert('Mark players present before completing a game.');
-    return;
-  }
+  const shiftWeight = getShiftQuarterWeight(state.shiftsPerQuarter);
 
-  if (!confirm(`Save and archive "${state.teamName} ${state.currentMatch.ourScore} - ${state.currentMatch.oppScore} ${state.currentMatch.opponent}" to Season Stats & History?`)) {
-    return;
-  }
-
-  const gameCounts = computeCurrentGameQuarterCounts();
-  const goals = state.currentMatch.goals || [];
-  const playerStatsSnapshot = {};
-
-  presentPlayers.forEach(p => {
-    const gc = gameCounts[p.id] || { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0 };
-    const pGoals = goals.filter(g => g.scorerId === p.id).length;
-    const pAssists = goals.filter(g => g.assistId === p.id).length;
-
-    p.prior.gamesPlayed = (Number(p.prior.gamesPlayed) || 0) + 1;
-    p.prior.BENCH = Math.round(((Number(p.prior.BENCH) || 0) + gc.BENCH) * 100) / 100;
-    p.prior.FWD = Math.round(((Number(p.prior.FWD) || 0) + gc.FWD) * 100) / 100;
-    p.prior.MID = Math.round(((Number(p.prior.MID) || 0) + gc.MID) * 100) / 100;
-    p.prior.DEF = Math.round(((Number(p.prior.DEF) || 0) + gc.DEF) * 100) / 100;
-    p.prior.GK = Math.round(((Number(p.prior.GK) || 0) + gc.GK) * 100) / 100;
-    p.prior.goals = (Number(p.prior.goals) || 0) + pGoals;
-    p.prior.assists = (Number(p.prior.assists) || 0) + pAssists;
-
-    playerStatsSnapshot[p.id] = {
+  const gamePlayerStats = {};
+  state.players.forEach(p => {
+    gamePlayerStats[p.id] = {
+      playerId: p.id,
       name: p.name,
       number: p.number || '',
-      BENCH: gc.BENCH,
-      FWD: gc.FWD,
-      MID: gc.MID,
-      DEF: gc.DEF,
-      GK: gc.GK,
-      goals: pGoals,
-      assists: pAssists
+      present: !!p.present,
+      BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0
     };
   });
 
-  const rotationSnapshot = state.computedShifts.map(sh => ({
-    quarter: sh.quarter,
-    part: sh.part,
-    benchNames: presentPlayers.filter(p => sh.benchIds.includes(p.id)).map(formatPlayerBadge)
+  state.computedShifts.forEach(s => {
+    presentPlayers.forEach(p => {
+      if (s.benchIds.includes(p.id)) {
+        p.prior.BENCH = Math.round(((p.prior.BENCH || 0) + shiftWeight) * 100) / 100;
+        gamePlayerStats[p.id].BENCH = Math.round((gamePlayerStats[p.id].BENCH + shiftWeight) * 100) / 100;
+      } else {
+        const pos = s.positions[p.id] || 'MID';
+        p.prior[pos] = Math.round(((p.prior[pos] || 0) + shiftWeight) * 100) / 100;
+        gamePlayerStats[p.id][pos] = Math.round(((gamePlayerStats[p.id][pos] || 0) + shiftWeight) * 100) / 100;
+      }
+    });
+  });
+
+  presentPlayers.forEach(p => {
+    p.prior.gamesPlayed = (p.prior.gamesPlayed || 0) + 1;
+  });
+
+  state.players.forEach(p => {
+    p.rsvp = null;
+    p.present = true;
+  });
+
+  const formattedGoals = (state.currentMatch.goals || []).map(g => {
+    const scorer = state.players.find(p => p.id === g.scorerId);
+    if (scorer) scorer.prior.goals = (scorer.prior.goals || 0) + 1;
+
+    const assister = g.assistId ? state.players.find(p => p.id === g.assistId) : null;
+    if (assister) assister.prior.assists = (assister.prior.assists || 0) + 1;
+
+    return {
+      id: g.id || ('hg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5)),
+      quarter: g.quarter,
+      clock: g.clock,
+      scorerId: g.scorerId,
+      assistId: g.assistId || null,
+      scorerLabel: getPlayerDisplayById(g.scorerId),
+      assistLabel: g.assistId ? getPlayerDisplayById(g.assistId) : null
+    };
+  });
+
+  const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
+  const rotationSnapshot = state.computedShifts.map(s => ({
+    quarter: s.quarter,
+    part: s.part,
+    benchNames: s.benchIds.map(id => playerMap[id]).filter(Boolean),
+    positions: Object.fromEntries(
+      Object.entries(s.positions || {})
+        .filter(([pid]) => !s.benchIds.includes(pid) && playerMap[pid])
+        .map(([pid, pos]) => [playerMap[pid], pos])
+    )
   }));
 
-  const historyEntry = {
-    id: 'game_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-    date: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
-    teamName: state.teamName,
+  const todayStr = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  state.gameHistory.unshift({
+    id: 'match_' + Date.now(),
+    date: todayStr,
+    teamName: state.teamName || 'My Team',
     opponent: state.currentMatch.opponent || 'Opponent',
-    ourScore: Number(state.currentMatch.ourScore) || 0,
-    oppScore: Number(state.currentMatch.oppScore) || 0,
-    goals: JSON.parse(JSON.stringify(goals)),
-    playerStatsSnapshot,
+    ourScore: state.currentMatch.ourScore || 0,
+    oppScore: state.currentMatch.oppScore || 0,
+    shiftsPerQuarter: state.shiftsPerQuarter,
+    goals: formattedGoals,
+    playerStats: gamePlayerStats,
     rotationSnapshot
-  };
+  });
 
-  state.gameHistory.unshift(historyEntry);
-
-  // Reset live match for next game
   state.currentMatch = {
     opponent: 'Opponent',
     ourScore: 0,
@@ -2218,284 +1559,887 @@ export function finishAndSaveGame() {
   };
   state.lockedShifts = {};
   state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
-  state.players.forEach(p => { p.rsvp = null; });
-
   timer.quarter = 1;
   timer.viewedQuarter = 1;
   timer.activeAlertShiftIdx = null;
   timer.dismissedShiftIndices = [];
   resetTimer(false);
-  recalculateSchedule(true);
-  currentMainTab = 'stats';
+  recalculateSchedule();
+  switchMainTab('stats');
   renderAll();
 }
 
-export function openGameDetailModal(gameId) {
-  const game = (state.gameHistory || []).find(g => g.id === gameId);
+// ============================================================================
+// HISTORICAL GAME DETAIL VIEWER & EDITOR MODAL LOGIC
+// ============================================================================
+function resolveGoalPlayerId(goalObj, fieldId, fieldLabel) {
+  if (goalObj[fieldId]) return goalObj[fieldId];
+  if (!goalObj[fieldLabel]) return fieldId === 'scorerId' ? 'OWN_GOAL' : null;
+  const lbl = String(goalObj[fieldLabel]).toLowerCase().trim();
+  if (lbl === 'own goal' || lbl === 'team goal') return 'OWN_GOAL';
+  const match = state.players.find(p =>
+    formatPlayerBadge(p).toLowerCase() === lbl || p.name.toLowerCase() === lbl
+  );
+  return match ? match.id : (fieldId === 'scorerId' ? 'OWN_GOAL' : null);
+}
+
+function openGameDetailModal(gameId) {
+  const game = state.gameHistory.find(g => g.id === gameId);
   if (!game) return;
+  editingHistoryGameId = gameId;
 
-  histModalDraft = JSON.parse(JSON.stringify(game));
-  if (!histModalDraft.playerStatsSnapshot) {
-    histModalDraft.playerStatsSnapshot = {};
-  }
+  const draftPlayerStats = {};
+  state.players.forEach(p => {
+    const existing = game.playerStats && game.playerStats[p.id];
+    draftPlayerStats[p.id] = existing
+      ? { ...existing }
+      : {
+          playerId: p.id,
+          name: p.name,
+          number: p.number || '',
+          present: true,
+          BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0,
+          isLegacyUnrecorded: true
+        };
+  });
 
-  renderGameDetailModalContent();
+  histDraft = {
+    date: game.date || '',
+    teamName: game.teamName || state.teamName,
+    opponent: game.opponent || 'Opponent',
+    ourScore: Number(game.ourScore) || 0,
+    oppScore: Number(game.oppScore) || 0,
+    goals: (game.goals || []).map(gl => ({
+      id: gl.id || ('hg_' + Math.random().toString(36).slice(2, 7)),
+      quarter: gl.quarter || 1,
+      clock: gl.clock || '04:00',
+      scorerId: resolveGoalPlayerId(gl, 'scorerId', 'scorerLabel'),
+      assistId: resolveGoalPlayerId(gl, 'assistId', 'assistLabel')
+    })),
+    playerStats: draftPlayerStats,
+    rotationSnapshot: game.rotationSnapshot || null
+  };
+
+  const editable = canEditGame();
+  document.getElementById('gameDetailModalTitle').textContent = editable ? '📋 Match Details & Editor' : '📋 Match Box Score';
+  document.getElementById('gameDetailModalSubtitle').textContent = editable
+    ? 'Edit score, goals, assists, or player quarter counts. Saving updates season stats automatically.'
+    : 'Completed match summary and player quarter breakdown.';
+
+  ['histEditDate', 'histEditTeamName', 'histEditOpponent', 'histEditOurScore', 'histEditOppScore'].forEach(id => {
+    document.getElementById(id).disabled = !editable;
+  });
+  document.querySelectorAll('.hist-edit-btn').forEach(el => {
+    el.style.display = editable ? '' : 'none';
+  });
+  document.getElementById('histAddGoalBtn').style.display = editable ? '' : 'none';
+  document.getElementById('histDeleteGameBtn').style.display = isHeadCoach() ? '' : 'none';
+  document.getElementById('histSaveGameBtn').style.display = editable ? '' : 'none';
+
+  document.getElementById('histEditDate').value = histDraft.date;
+  document.getElementById('histEditTeamName').value = histDraft.teamName;
+  document.getElementById('histEditOpponent').value = histDraft.opponent;
+  document.getElementById('histEditOurScore').value = histDraft.ourScore;
+  document.getElementById('histEditOppScore').value = histDraft.oppScore;
+
+  renderHistEditGoals();
+  renderHistEditPlayers();
+  renderHistRotationSnapshot();
+
   document.getElementById('gameDetailModal').classList.remove('hidden');
 }
 
-export function closeGameDetailModal() {
-  histModalDraft = null;
+function closeGameDetailModal() {
+  editingHistoryGameId = null;
+  histDraft = null;
   document.getElementById('gameDetailModal').classList.add('hidden');
 }
 
-function renderGameDetailModalContent() {
-  if (!histModalDraft) return;
-  const editable = canEditGame();
-
-  const dateInp = document.getElementById('histEditDate');
-  const teamInp = document.getElementById('histEditTeamName');
-  const oppInp = document.getElementById('histEditOpponent');
-  const ourInp = document.getElementById('histEditOurScore');
-  const oppScoreInp = document.getElementById('histEditOppScore');
-
-  if (dateInp) { dateInp.value = histModalDraft.date || ''; dateInp.disabled = !editable; }
-  if (teamInp) { teamInp.value = histModalDraft.teamName || state.teamName; teamInp.disabled = !editable; }
-  if (oppInp) { oppInp.value = histModalDraft.opponent || 'Opponent'; oppInp.disabled = !editable; }
-  if (ourInp) { ourInp.value = histModalDraft.ourScore || 0; ourInp.disabled = !editable; }
-  if (oppScoreInp) { oppScoreInp.value = histModalDraft.oppScore || 0; oppScoreInp.disabled = !editable; }
-
-  document.querySelectorAll('.hist-edit-btn').forEach(btn => {
-    btn.classList.toggle('hidden', !editable);
-  });
-
-  const addGoalBtn = document.getElementById('histAddGoalBtn');
-  const delGameBtn = document.getElementById('histDeleteGameBtn');
-  const saveGameBtn = document.getElementById('histSaveGameBtn');
-  if (addGoalBtn) addGoalBtn.classList.toggle('hidden', !editable);
-  if (delGameBtn) delGameBtn.classList.toggle('hidden', !editable);
-  if (saveGameBtn) saveGameBtn.classList.toggle('hidden', !editable);
-
-  // Goals List in Modal
-  const goalsListEl = document.getElementById('histEditGoalsList');
-  if (goalsListEl) {
-    const goals = histModalDraft.goals || [];
-    if (goals.length === 0) {
-      goalsListEl.innerHTML = `<div class="text-xs text-slate-500 italic py-2">No goals logged for this match.</div>`;
-    } else {
-      const playerOpts = state.players.map(p => ({ id: p.id, label: formatPlayerBadge(p) }));
-      goalsListEl.innerHTML = goals.map((gl, idx) => `
-        <div class="flex flex-wrap items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs">
-          <select onchange="updateHistDraftGoal(${idx}, 'quarter', this.value)" ${!editable ? 'disabled' : ''}
-            class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-emerald-300 font-bold">
-            ${[1, 2, 3, 4].map(q => `<option value="${q}" ${Number(gl.quarter) === q ? 'selected' : ''}>Q${q}</option>`).join('')}
-          </select>
-          <select onchange="updateHistDraftGoal(${idx}, 'scorerId', this.value)" ${!editable ? 'disabled' : ''}
-            class="flex-1 min-w-[120px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white font-semibold">
-            ${playerOpts.map(o => `<option value="${o.id}" ${gl.scorerId === o.id ? 'selected' : ''}>⚽ ${escapeHtml(o.label)}</option>`).join('')}
-            <option value="OWN_GOAL" ${gl.scorerId === 'OWN_GOAL' ? 'selected' : ''}>🥅 Own Goal</option>
-          </select>
-          <select onchange="updateHistDraftGoal(${idx}, 'assistId', this.value)" ${!editable ? 'disabled' : ''}
-            class="flex-1 min-w-[120px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-blue-300 font-semibold">
-            <option value="">— No Assist</option>
-            ${playerOpts.map(o => `<option value="${o.id}" ${gl.assistId === o.id ? 'selected' : ''}>👟 ${escapeHtml(o.label)}</option>`).join('')}
-          </select>
-          ${editable ? `
-            <button onclick="removeHistDraftGoal(${idx})" class="px-2 py-1 rounded-lg bg-rose-500/15 text-rose-300 font-bold">✕</button>
-          ` : ''}
-        </div>
-      `).join('');
-    }
-  }
-
-  // Player Quarter Counts in Modal
-  const playersListEl = document.getElementById('histEditPlayersList');
-  if (playersListEl) {
-    const snap = histModalDraft.playerStatsSnapshot || {};
-    const pIds = Object.keys(snap);
-    if (pIds.length === 0) {
-      playersListEl.innerHTML = `<div class="text-xs text-slate-500 italic">No per-player quarter snapshot stored for this match.</div>`;
-    } else {
-      playersListEl.innerHTML = pIds.map(pid => {
-        const ps = snap[pid];
-        const pObj = state.players.find(x => x.id === pid);
-        const label = pObj ? formatPlayerBadge(pObj) : (ps.number ? `#${ps.number} ${ps.name}` : ps.name);
-        return `
-          <div class="grid grid-cols-6 gap-1.5 items-center bg-slate-950 border border-slate-800 rounded-xl p-2 text-[11px]">
-            <div class="col-span-2 font-bold text-white truncate">${escapeHtml(label)}</div>
-            ${['BENCH', 'FWD', 'MID', 'DEF'].map(z => `
-              <div class="flex flex-col items-center">
-                <span class="text-[9px] text-slate-400">${z}</span>
-                <input type="number" step="0.5" min="0" max="4" value="${fmtNum(ps[z] || 0)}"
-                  ${!editable ? 'disabled' : ''}
-                  onchange="updateHistDraftPlayerStat('${pid}', '${z}', this.value)"
-                  class="w-12 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono font-bold text-white" />
-              </div>
-            `).join('')}
-          </div>
-        `;
-      }).join('');
-    }
-  }
-
-  // Rotation Snapshot
-  const rotSec = document.getElementById('histRotationSnapshotSection');
-  const rotList = document.getElementById('histRotationSnapshotList');
-  if (rotSec && rotList) {
-    const snaps = histModalDraft.rotationSnapshot || [];
-    if (snaps.length === 0) {
-      rotSec.classList.add('hidden');
-    } else {
-      rotSec.classList.remove('hidden');
-      rotList.innerHTML = snaps.map(s => `
-        <div class="bg-slate-950 border border-slate-800 rounded-xl p-2">
-          <div class="font-bold text-emerald-300">Q${s.quarter} • Shift ${s.part}</div>
-          <div class="text-slate-400">🪑 Bench: ${escapeHtml((s.benchNames || []).join(', ') || 'None')}</div>
-        </div>
-      `).join('');
-    }
-  }
-}
-
-export function adjustHistDraftScore(side, delta) {
-  if (!histModalDraft || !canEditGame()) return;
+function adjustHistDraftScore(side, delta) {
+  if (!canEditGame() || !histDraft) return;
   if (side === 'our') {
-    histModalDraft.ourScore = Math.max(0, (Number(histModalDraft.ourScore) || 0) + delta);
+    const cur = parseInt(document.getElementById('histEditOurScore').value, 10) || 0;
+    document.getElementById('histEditOurScore').value = Math.max(0, cur + delta);
   } else {
-    histModalDraft.oppScore = Math.max(0, (Number(histModalDraft.oppScore) || 0) + delta);
+    const cur = parseInt(document.getElementById('histEditOppScore').value, 10) || 0;
+    document.getElementById('histEditOppScore').value = Math.max(0, cur + delta);
   }
-  renderGameDetailModalContent();
 }
 
-export function addHistDraftGoal() {
-  if (!histModalDraft || !canEditGame()) return;
-  const firstP = state.players[0];
-  const scorerId = firstP ? firstP.id : 'OWN_GOAL';
-  histModalDraft.goals = histModalDraft.goals || [];
-  histModalDraft.goals.push({
-    id: 'hg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+function renderHistEditGoals() {
+  const container = document.getElementById('histEditGoalsList');
+  const editable = canEditGame();
+  if (!histDraft.goals || histDraft.goals.length === 0) {
+    container.innerHTML = `<div class="text-xs text-slate-500 italic py-2 text-center bg-slate-950 rounded-xl border border-slate-800">No team goals logged for this game.</div>`;
+    return;
+  }
+
+  const scorerOptions = [
+    ...state.players.map(p => ({ id: p.id, label: formatPlayerBadge(p) })),
+    { id: 'OWN_GOAL', label: 'Own Goal / Team' }
+  ];
+
+  const assistOptions = [
+    { id: '', label: 'Unassisted' },
+    ...state.players.map(p => ({ id: p.id, label: formatPlayerBadge(p) }))
+  ];
+
+  container.innerHTML = histDraft.goals.map((g, idx) => `
+    <div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div class="flex items-center gap-1.5">
+        <select ${editable ? '' : 'disabled'} onchange="updateHistGoalField(${idx}, 'quarter', Number(this.value))"
+          class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-emerald-300 font-bold">
+          ${[1, 2, 3, 4].map(q => `<option value="${q}" ${Number(g.quarter) === q ? 'selected' : ''}>Q${q}</option>`).join('')}
+        </select>
+        <input ${editable ? '' : 'disabled'} type="text" value="${escapeHtml(g.clock || '04:00')}" maxlength="5"
+          onchange="updateHistGoalField(${idx}, 'clock', this.value)"
+          class="w-14 bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-center mono text-slate-300" />
+      </div>
+
+      <div class="flex items-center gap-1.5 flex-1 min-w-[180px]">
+        <span class="text-slate-400">⚽</span>
+        <select ${editable ? '' : 'disabled'} onchange="updateHistGoalField(${idx}, 'scorerId', this.value)"
+          class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white font-bold">
+          ${scorerOptions.map(o => `<option value="${o.id}" ${g.scorerId === o.id ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="flex items-center gap-1.5 flex-1 min-w-[170px]">
+        <span class="text-slate-400">👟</span>
+        <select ${editable ? '' : 'disabled'} onchange="updateHistGoalField(${idx}, 'assistId', this.value || null)"
+          class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-blue-300 font-semibold">
+          ${assistOptions.map(o => `<option value="${o.id}" ${(g.assistId || '') === o.id ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+        </select>
+        ${editable ? `<button onclick="removeHistDraftGoal(${idx})" class="text-slate-500 hover:text-rose-400 px-1.5 font-bold" title="Remove Goal">✕</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateHistGoalField(idx, field, value) {
+  if (!canEditGame() || !histDraft || !histDraft.goals[idx]) return;
+  histDraft.goals[idx][field] = value;
+}
+
+function addHistDraftGoal() {
+  if (!canEditGame() || !histDraft) return;
+  const defaultScorer = state.players.length > 0 ? state.players[0].id : 'OWN_GOAL';
+  histDraft.goals.push({
+    id: 'hg_' + Date.now(),
     quarter: 1,
     clock: '04:00',
-    scorerId,
-    assistId: null,
-    scorerLabel: getPlayerDisplayById(scorerId),
-    assistLabel: null
+    scorerId: defaultScorer,
+    assistId: null
   });
-  histModalDraft.ourScore = histModalDraft.goals.length;
-  renderGameDetailModalContent();
-}
-
-export function updateHistDraftGoal(idx, field, val) {
-  if (!histModalDraft || !histModalDraft.goals || !histModalDraft.goals[idx]) return;
-  const g = histModalDraft.goals[idx];
-  if (field === 'quarter') {
-    g.quarter = parseInt(val, 10) || 1;
-  } else if (field === 'scorerId') {
-    g.scorerId = val;
-    g.scorerLabel = getPlayerDisplayById(val);
-  } else if (field === 'assistId') {
-    g.assistId = val || null;
-    g.assistLabel = val ? getPlayerDisplayById(val) : null;
+  const curScore = parseInt(document.getElementById('histEditOurScore').value, 10) || 0;
+  if (histDraft.goals.length > curScore) {
+    document.getElementById('histEditOurScore').value = histDraft.goals.length;
   }
-  renderGameDetailModalContent();
+  renderHistEditGoals();
 }
 
-export function removeHistDraftGoal(idx) {
-  if (!histModalDraft || !histModalDraft.goals) return;
-  histModalDraft.goals.splice(idx, 1);
-  histModalDraft.ourScore = Math.max(0, (Number(histModalDraft.ourScore) || 1) - 1);
-  renderGameDetailModalContent();
+function removeHistDraftGoal(idx) {
+  if (!canEditGame() || !histDraft) return;
+  histDraft.goals.splice(idx, 1);
+  const curScore = parseInt(document.getElementById('histEditOurScore').value, 10) || 0;
+  document.getElementById('histEditOurScore').value = Math.max(0, curScore - 1);
+  renderHistEditGoals();
 }
 
-export function updateHistDraftPlayerStat(playerId, zone, val) {
-  if (!histModalDraft || !histModalDraft.playerStatsSnapshot || !histModalDraft.playerStatsSnapshot[playerId]) return;
-  histModalDraft.playerStatsSnapshot[playerId][zone] = Math.max(0, parseFloat(val) || 0);
+function renderHistEditPlayers() {
+  const container = document.getElementById('histEditPlayersList');
+  const editable = canEditGame();
+  if (!histDraft || state.players.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = state.players.map(p => {
+    const ps = histDraft.playerStats[p.id] || { present: true, BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0 };
+    return `
+      <div class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div class="flex items-center gap-2 min-w-[120px]">
+          <input ${editable ? '' : 'disabled'} type="checkbox" ${ps.present ? 'checked' : ''}
+            onchange="toggleHistPlayerPresent('${p.id}', this.checked)"
+            class="rounded accent-emerald-500" />
+          <span class="font-bold text-white ${ps.present ? '' : 'line-through text-slate-500'}">${escapeHtml(formatPlayerBadge(p))}</span>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap text-[11px]">
+          <label class="text-slate-400">🪑<input ${editable ? '' : 'disabled'} type="number" step="0.5" min="0" value="${ps.BENCH || 0}"
+            onchange="updateHistPlayerStat('${p.id}', 'BENCH', this.value)"
+            class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
+          <label class="text-rose-400">FWD<input ${editable ? '' : 'disabled'} type="number" step="0.5" min="0" value="${ps.FWD || 0}"
+            onchange="updateHistPlayerStat('${p.id}', 'FWD', this.value)"
+            class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
+          <label class="text-blue-400">MID<input ${editable ? '' : 'disabled'} type="number" step="0.5" min="0" value="${ps.MID || 0}"
+            onchange="updateHistPlayerStat('${p.id}', 'MID', this.value)"
+            class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
+          <label class="text-emerald-400">DEF<input ${editable ? '' : 'disabled'} type="number" step="0.5" min="0" value="${ps.DEF || 0}"
+            onchange="updateHistPlayerStat('${p.id}', 'DEF', this.value)"
+            class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
+          <label class="text-amber-400">GK<input ${editable ? '' : 'disabled'} type="number" step="0.5" min="0" value="${ps.GK || 0}"
+            onchange="updateHistPlayerStat('${p.id}', 'GK', this.value)"
+            class="w-11 ml-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center mono text-white" /></label>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
-export function saveGameDetailEdits() {
-  if (!histModalDraft || !canEditGame()) return;
-  const origIdx = state.gameHistory.findIndex(g => g.id === histModalDraft.id);
-  if (origIdx === -1) return;
+function toggleHistPlayerPresent(playerId, isPresent) {
+  if (!canEditGame() || !histDraft || !histDraft.playerStats[playerId]) return;
+  histDraft.playerStats[playerId].present = isPresent;
+  histDraft.playerStats[playerId].isLegacyUnrecorded = false;
+  renderHistEditPlayers();
+}
 
-  const origGame = state.gameHistory[origIdx];
+function updateHistPlayerStat(playerId, zone, val) {
+  if (!canEditGame() || !histDraft || !histDraft.playerStats[playerId]) return;
+  histDraft.playerStats[playerId][zone] = Math.max(0, parseFloat(val) || 0);
+  histDraft.playerStats[playerId].isLegacyUnrecorded = false;
+}
 
-  // Sync top-level text/number inputs from modal
-  const dateInp = document.getElementById('histEditDate');
-  const teamInp = document.getElementById('histEditTeamName');
-  const oppInp = document.getElementById('histEditOpponent');
-  const ourInp = document.getElementById('histEditOurScore');
-  const oppScoreInp = document.getElementById('histEditOppScore');
+function renderHistRotationSnapshot() {
+  const sec = document.getElementById('histRotationSnapshotSection');
+  const list = document.getElementById('histRotationSnapshotList');
+  if (!histDraft || !histDraft.rotationSnapshot || histDraft.rotationSnapshot.length === 0) {
+    sec.classList.add('hidden');
+    list.innerHTML = '';
+    return;
+  }
+  sec.classList.remove('hidden');
+  list.innerHTML = histDraft.rotationSnapshot.map(s => `
+    <div class="bg-slate-950 border border-slate-800 rounded-lg p-2">
+      <div class="font-bold text-emerald-300">Q${s.quarter} • Shift ${s.part}</div>
+      <div class="text-slate-400">🪑 Out: <span class="text-white font-semibold">${s.benchNames && s.benchNames.length ? s.benchNames.map(escapeHtml).join(', ') : 'None'}</span></div>
+    </div>
+  `).join('');
+}
 
-  if (dateInp) histModalDraft.date = dateInp.value.trim();
-  if (teamInp) histModalDraft.teamName = teamInp.value.trim();
-  if (oppInp) histModalDraft.opponent = oppInp.value.trim();
-  if (ourInp) histModalDraft.ourScore = Math.max(0, parseInt(ourInp.value, 10) || 0);
-  if (oppScoreInp) histModalDraft.oppScore = Math.max(0, parseInt(oppScoreInp.value, 10) || 0);
+function saveGameDetailEdits() {
+  if (!canEditGame() || !editingHistoryGameId || !histDraft) return;
+  const gameIdx = state.gameHistory.findIndex(g => g.id === editingHistoryGameId);
+  if (gameIdx < 0) return;
 
-  // Reconcile goals & assists delta into player.prior
+  const oldGame = state.gameHistory[gameIdx];
+
+  const oldGoalsCount = {};
+  const oldAssistsCount = {};
+  (oldGame.goals || []).forEach(gl => {
+    const sId = resolveGoalPlayerId(gl, 'scorerId', 'scorerLabel');
+    const aId = resolveGoalPlayerId(gl, 'assistId', 'assistLabel');
+    if (sId && sId !== 'OWN_GOAL') oldGoalsCount[sId] = (oldGoalsCount[sId] || 0) + 1;
+    if (aId) oldAssistsCount[aId] = (oldAssistsCount[aId] || 0) + 1;
+  });
+
+  const newGoalsCount = {};
+  const newAssistsCount = {};
+  const savedGoals = histDraft.goals.map(gl => {
+    if (gl.scorerId && gl.scorerId !== 'OWN_GOAL') {
+      newGoalsCount[gl.scorerId] = (newGoalsCount[gl.scorerId] || 0) + 1;
+    }
+    if (gl.assistId) {
+      newAssistsCount[gl.assistId] = (newAssistsCount[gl.assistId] || 0) + 1;
+    }
+    return {
+      id: gl.id,
+      quarter: gl.quarter,
+      clock: gl.clock,
+      scorerId: gl.scorerId,
+      assistId: gl.assistId || null,
+      scorerLabel: getPlayerDisplayById(gl.scorerId),
+      assistLabel: gl.assistId ? getPlayerDisplayById(gl.assistId) : null
+    };
+  });
+
   state.players.forEach(p => {
-    const oldGoals = (origGame.goals || []).filter(g => g.scorerId === p.id).length;
-    const newGoals = (histModalDraft.goals || []).filter(g => g.scorerId === p.id).length;
-    p.prior.goals = Math.max(0, (Number(p.prior.goals) || 0) + (newGoals - oldGoals));
+    const gDelta = (newGoalsCount[p.id] || 0) - (oldGoalsCount[p.id] || 0);
+    const aDelta = (newAssistsCount[p.id] || 0) - (oldAssistsCount[p.id] || 0);
+    p.prior.goals = Math.max(0, (p.prior.goals || 0) + gDelta);
+    p.prior.assists = Math.max(0, (p.prior.assists || 0) + aDelta);
 
-    const oldAssists = (origGame.goals || []).filter(g => g.assistId === p.id).length;
-    const newAssists = (histModalDraft.goals || []).filter(g => g.assistId === p.id).length;
-    p.prior.assists = Math.max(0, (Number(p.prior.assists) || 0) + (newAssists - oldAssists));
-
-    const oldSnap = (origGame.playerStatsSnapshot || {})[p.id];
-    const newSnap = (histModalDraft.playerStatsSnapshot || {})[p.id];
-    if (oldSnap && newSnap) {
+    const newPs = histDraft.playerStats[p.id];
+    const oldPs = oldGame.playerStats ? oldGame.playerStats[p.id] : null;
+    if (newPs && !newPs.isLegacyUnrecorded && oldPs) {
+      const gpDelta = (newPs.present ? 1 : 0) - (oldPs.present ? 1 : 0);
+      p.prior.gamesPlayed = Math.max(0, (p.prior.gamesPlayed || 0) + gpDelta);
       ['BENCH', 'FWD', 'MID', 'DEF', 'GK'].forEach(z => {
-        const delta = (Number(newSnap[z]) || 0) - (Number(oldSnap[z]) || 0);
-        p.prior[z] = Math.max(0, Math.round(((Number(p.prior[z]) || 0) + delta) * 100) / 100);
+        const zDelta = (Number(newPs[z]) || 0) - (Number(oldPs[z]) || 0);
+        p.prior[z] = Math.max(0, Math.round(((p.prior[z] || 0) + zDelta) * 100) / 100);
       });
-      newSnap.goals = newGoals;
-      newSnap.assists = newAssists;
     }
   });
 
-  state.gameHistory[origIdx] = histModalDraft;
+  state.gameHistory[gameIdx] = {
+    ...oldGame,
+    date: document.getElementById('histEditDate').value.trim() || oldGame.date,
+    teamName: document.getElementById('histEditTeamName').value.trim() || state.teamName,
+    opponent: document.getElementById('histEditOpponent').value.trim() || 'Opponent',
+    ourScore: Math.max(0, parseInt(document.getElementById('histEditOurScore').value, 10) || 0),
+    oppScore: Math.max(0, parseInt(document.getElementById('histEditOppScore').value, 10) || 0),
+    goals: savedGoals,
+    playerStats: histDraft.playerStats
+  };
+
   closeGameDetailModal();
-  recalculateSchedule(true);
+  recalculateSchedule();
   renderAll();
 }
 
-export function deleteCurrentModalHistoryGame() {
-  if (!histModalDraft || !canEditGame()) return;
-  if (!confirm('Delete this game from history and subtract its stats from season totals?')) return;
+function deleteCurrentModalHistoryGame() {
+  if (!isHeadCoach() || !editingHistoryGameId) return;
+  if (!confirm('Delete this game from history and subtract its goals, assists, and shifts from season totals?')) return;
+  deleteHistoryGame(editingHistoryGameId);
+  closeGameDetailModal();
+}
 
-  const origIdx = state.gameHistory.findIndex(g => g.id === histModalDraft.id);
-  if (origIdx === -1) return;
-  const origGame = state.gameHistory[origIdx];
+function deleteHistoryGame(gameId) {
+  if (!isHeadCoach()) return;
+  const game = state.gameHistory.find(g => g.id === gameId);
+  if (game) {
+    (game.goals || []).forEach(gl => {
+      const sId = resolveGoalPlayerId(gl, 'scorerId', 'scorerLabel');
+      const aId = resolveGoalPlayerId(gl, 'assistId', 'assistLabel');
+      const scorer = state.players.find(p => p.id === sId);
+      if (scorer) scorer.prior.goals = Math.max(0, (scorer.prior.goals || 0) - 1);
+      const assister = state.players.find(p => p.id === aId);
+      if (assister) assister.prior.assists = Math.max(0, (assister.prior.assists || 0) - 1);
+    });
 
-  state.players.forEach(p => {
-    const oldGoals = (origGame.goals || []).filter(g => g.scorerId === p.id).length;
-    const oldAssists = (origGame.goals || []).filter(g => g.assistId === p.id).length;
-    p.prior.goals = Math.max(0, (Number(p.prior.goals) || 0) - oldGoals);
-    p.prior.assists = Math.max(0, (Number(p.prior.assists) || 0) - oldAssists);
-
-    const oldSnap = (origGame.playerStatsSnapshot || {})[p.id];
-    if (oldSnap) {
-      p.prior.gamesPlayed = Math.max(0, (Number(p.prior.gamesPlayed) || 1) - 1);
-      ['BENCH', 'FWD', 'MID', 'DEF', 'GK'].forEach(z => {
-        p.prior[z] = Math.max(0, Math.round(((Number(p.prior[z]) || 0) - (Number(oldSnap[z]) || 0)) * 100) / 100);
+    if (game.playerStats) {
+      state.players.forEach(p => {
+        const ps = game.playerStats[p.id];
+        if (ps && !ps.isLegacyUnrecorded) {
+          if (ps.present) p.prior.gamesPlayed = Math.max(0, (p.prior.gamesPlayed || 0) - 1);
+          ['BENCH', 'FWD', 'MID', 'DEF', 'GK'].forEach(z => {
+            p.prior[z] = Math.max(0, Math.round(((p.prior[z] || 0) - (Number(ps[z]) || 0)) * 100) / 100);
+          });
+        }
       });
     }
-  });
+  }
 
-  state.gameHistory.splice(origIdx, 1);
-  closeGameDetailModal();
-  recalculateSchedule(true);
+  state.gameHistory = state.gameHistory.filter(g => g.id !== gameId);
+  recalculateSchedule();
   renderAll();
 }
 
 // ============================================================================
-// FEEDBACK EMBED & PWA INSTALL PROMPT
+// SMS / RCS TEXT GENERATION & COPY
 // ============================================================================
-export function toggleFeedbackEmbed() {
+function getSmsMessages() {
+  const playerMap = Object.fromEntries(state.players.map(p => [p.id, formatPlayerBadge(p)]));
+  const ordinals = ['', '1st', '2nd', '3rd', '4th'];
+  const messages = [];
+
+  state.computedShifts.forEach(s => {
+    if (state.shiftsPerQuarter === 2 && s.part === 2 && state.fullQuarterLocks[s.quarter]) {
+      return;
+    }
+
+    const qOrd = ordinals[s.quarter];
+    const benchNames = s.benchIds.map(id => playerMap[id]).filter(Boolean);
+    const benchStr = benchNames.length === 0
+      ? 'None'
+      : benchNames.length === 1
+        ? benchNames[0]
+        : benchNames.slice(0, -1).join(', ') + ' and ' + benchNames[benchNames.length - 1];
+
+    const isFullQtr = state.shiftsPerQuarter === 1 || !!state.fullQuarterLocks[s.quarter];
+    const prefix = isFullQtr
+      ? `Out ${qOrd}`
+      : (s.part === 1 ? `Out ${qOrd}` : `2nd part of ${qOrd}`);
+
+    if (state.smsStyle === 'compact' || !state.trackPositions) {
+      if (s.part === 2 && s.isMidQtrPosSwapShift) return;
+      messages.push(`${prefix} ${benchStr}`);
+    } else {
+      const groups = { FWD: [], MID: [], DEF: [], GK: [] };
+      Object.entries(s.positions || {}).forEach(([pid, pos]) => {
+        if (!s.benchIds.includes(pid) && playerMap[pid]) {
+          groups[pos].push(playerMap[pid]);
+        }
+      });
+      const posParts = [];
+      if (groups.FWD.length) posParts.push(`FWD: ${groups.FWD.join('/')}`);
+      if (groups.MID.length) posParts.push(`MID: ${groups.MID.join('/')}`);
+      if (groups.DEF.length) posParts.push(`DEF: ${groups.DEF.join('/')}`);
+      if (groups.GK.length)  posParts.push(`GK: ${groups.GK.join('/')}`);
+
+      messages.push(`${prefix}: ${benchStr} | ${posParts.join(' • ')}`);
+    }
+  });
+
+  return messages;
+}
+
+function renderSmsBubbles() {
+  const isCompact = state.smsStyle === 'compact' || !state.trackPositions;
+  document.getElementById('smsBtnCompact').className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+    isCompact ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-slate-800 text-slate-400 border-slate-700'
+  }`;
+  document.getElementById('smsBtnPositions').className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+    !isCompact ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-slate-800 text-slate-400 border-slate-700'
+  }`;
+
+  const messages = getSmsMessages();
+  const container = document.getElementById('smsBubblesContainer');
+  container.innerHTML = messages.map((msg, idx) => `
+    <div onclick="copySingleBubble(${idx})"
+      class="cursor-pointer group flex items-center justify-between bg-[#1e4e68] hover:bg-[#255f7e] text-white px-3.5 py-2 rounded-2xl rounded-br-sm text-xs font-medium shadow transition">
+      <span>${escapeHtml(msg)}</span>
+      <span class="text-[10px] opacity-60 group-hover:opacity-100 ml-2 shrink-0">📋 Copy</span>
+    </div>
+  `).join('');
+}
+
+function setSmsStyle(style) {
+  state.smsStyle = style;
+  saveState(false);
+  renderSmsBubbles();
+}
+
+function copySingleBubble(idx) {
+  const msgs = getSmsMessages();
+  if (msgs[idx]) copyTextToClipboard(msgs[idx]);
+}
+
+function copyAllSms() {
+  const fullText = getSmsMessages().join('\n');
+  copyTextToClipboard(fullText, 'copyAllBtn');
+}
+
+function copyTextToClipboard(text, btnId) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (btnId) {
+      const btn = document.getElementById(btnId);
+      const orig = btn.innerHTML;
+      btn.innerHTML = '✅ Copied!';
+      setTimeout(() => { btn.innerHTML = orig; }, 1600);
+    }
+  });
+}
+
+// ============================================================================
+// ON-THE-FLY SHIFT & POSITION MODAL ACTIONS (INCLUDES 🎲 RANDOM GK)
+// ============================================================================
+function openEditModal(shiftIdx) {
+  if (!canEditGame()) return;
+  editingShiftIdx = shiftIdx;
+  const shift = state.computedShifts[shiftIdx];
+  if (!shift) return;
+
+  modalDraft = {
+    benchIds: [...shift.benchIds],
+    positions: { ...shift.positions }
+  };
+
+  const shiftDurLabel = fmtDurationLabel(state.quarterMins / state.shiftsPerQuarter);
+  const qtrDurLabel = fmtDurationLabel(state.quarterMins);
+  const isFullQtr = state.shiftsPerQuarter === 1 || !!state.fullQuarterLocks[shift.quarter];
+  const partLabel = isFullQtr
+    ? `Full ${qtrDurLabel}`
+    : (shift.part === 1 ? `1st ${shiftDurLabel}` : `2nd ${shiftDurLabel}`);
+
+  document.getElementById('modalTitle').textContent = `Edit Quarter ${shift.quarter} • ${partLabel}`;
+
+  const randGkBtn = document.getElementById('modalRandomGkBtn');
+  if (randGkBtn) {
+    randGkBtn.classList.toggle('hidden', !(state.trackPositions && (state.slots.GK || 0) > 0));
+  }
+
+  document.getElementById('editModal').classList.remove('hidden');
+  renderModalPlayers();
+}
+
+function closeEditModal() {
+  editingShiftIdx = null;
+  document.getElementById('editModal').classList.add('hidden');
+}
+
+function rollRandomModalGoalie() {
+  const onFieldPlayers = state.players.filter(p => p.present && !modalDraft.benchIds.includes(p.id));
+  if (onFieldPlayers.length === 0) return;
+
+  const currentGkIds = onFieldPlayers.filter(p => modalDraft.positions[p.id] === 'GK').map(p => p.id);
+  const candidates = onFieldPlayers.filter(p => !currentGkIds.includes(p.id));
+  const pool = candidates.length > 0 ? candidates : onFieldPlayers;
+  const winner = pool[Math.floor(Math.random() * pool.length)];
+
+  const winnerOldPos = modalDraft.positions[winner.id] || 'MID';
+  currentGkIds.forEach(oldId => {
+    modalDraft.positions[oldId] = winnerOldPos === 'GK' ? 'DEF' : winnerOldPos;
+  });
+  modalDraft.positions[winner.id] = 'GK';
+  renderModalPlayers();
+}
+
+function renderModalPlayers() {
+  const presentPlayers = getSortedRosterList(state.players.filter(p => p.present));
+  const targetBench = Math.max(0, presentPlayers.length - getTotalFieldSlots());
+
+  document.getElementById('modalBenchCounter').textContent =
+    `Sitting Out: ${modalDraft.benchIds.length} (Recommended: ${targetBench})`;
+
+  const activeZones = ['FWD', 'MID', 'DEF'];
+  if ((state.slots.GK || 0) > 0) activeZones.push('GK');
+
+  const listEl = document.getElementById('modalPlayerList');
+  listEl.innerHTML = presentPlayers.map(p => {
+    const isSitting = modalDraft.benchIds.includes(p.id);
+    const currentPos = modalDraft.positions[p.id] || 'MID';
+
+    return `
+      <div class="flex items-center justify-between bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5">
+        <div class="flex items-center gap-2.5">
+          <button onclick="toggleModalBench('${p.id}')"
+            class="px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              isSitting
+                ? 'pos-BENCH'
+                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+            }">
+            ${isSitting ? '🪑 Sitting Out' : '🏃 On Field'}
+          </button>
+          <span class="font-bold text-sm text-white">${escapeHtml(formatPlayerBadge(p))}</span>
+        </div>
+
+        ${!isSitting && state.trackPositions ? `
+          <div class="flex items-center gap-1">
+            ${activeZones.map(z => `
+              <button onclick="setModalPlayerPos('${p.id}', '${z}')"
+                class="px-2 py-1 rounded-md text-xs font-extrabold transition ${
+                  currentPos === z ? `pos-${z}` : 'bg-slate-900 text-slate-500 border border-slate-800'
+                }">
+                ${z}
+              </button>
+            `).join('')}
+          </div>
+        ` : `
+          <span class="text-xs text-slate-500">${isSitting ? 'On Bench' : 'Playing'}</span>
+        `}
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleModalBench(playerId) {
+  const idx = modalDraft.benchIds.indexOf(playerId);
+  if (idx >= 0) {
+    modalDraft.benchIds.splice(idx, 1);
+    if (!modalDraft.positions[playerId]) modalDraft.positions[playerId] = 'MID';
+  } else {
+    modalDraft.benchIds.push(playerId);
+  }
+  renderModalPlayers();
+}
+
+function setModalPlayerPos(playerId, pos) {
+  modalDraft.positions[playerId] = pos;
+  renderModalPlayers();
+}
+
+function saveModalShift() {
+  if (!canEditGame() || editingShiftIdx === null) return;
+  const shift = state.computedShifts[editingShiftIdx];
+  state.lockedShifts[editingShiftIdx] = {
+    benchIds: [...modalDraft.benchIds],
+    positions: { ...modalDraft.positions }
+  };
+
+  if (state.midQtrPosSwap && shift && shift.part === 1 && !state.lockedShifts[editingShiftIdx + 1]) {
+    delete state.lockedShifts[editingShiftIdx + 1];
+  }
+
+  closeEditModal();
+  recalculateSchedule();
+  renderAll();
+}
+
+function unlockCurrentModalShift() {
+  if (!canEditGame() || editingShiftIdx === null) return;
+  delete state.lockedShifts[editingShiftIdx];
+  closeEditModal();
+  recalculateSchedule();
+  renderAll();
+}
+
+// ============================================================================
+// ROSTER, ATTENDANCE & FORMAT HANDLERS
+// ============================================================================
+function addPlayerFromOnboarding() {
+  if (!isHeadCoach()) return;
+  const numEl = document.getElementById('onboardPlayerNum');
+  const nameEl = document.getElementById('onboardPlayerName');
+  const teamEl = document.getElementById('onboardTeamNameInput');
+
+  if (teamEl && teamEl.value.trim()) {
+    state.teamName = teamEl.value.trim();
+  }
+
+  const name = (nameEl.value || '').trim();
+  const number = (numEl.value || '').trim();
+  if (!name) return;
+
+  state.players.push({
+    id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    name,
+    number,
+    present: true,
+    rsvp: null,
+    prior: { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 }
+  });
+
+  numEl.value = '';
+  nameEl.value = '';
+  nameEl.focus();
+  recalculateSchedule();
+  renderAll();
+}
+
+function addPlayer() {
+  if (!isHeadCoach()) return;
+  const numInput = document.getElementById('newPlayerNumberInput');
+  const nameInput = document.getElementById('newPlayerInput');
+  const name = (nameInput.value || '').trim();
+  const number = (numInput.value || '').trim();
+  if (!name) return;
+
+  state.players.push({
+    id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    name,
+    number,
+    present: true,
+    rsvp: null,
+    prior: { BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0, gamesPlayed: 0, goals: 0, assists: 0 }
+  });
+  numInput.value = '';
+  nameInput.value = '';
+  nameInput.focus();
+  recalculateSchedule();
+  renderAll();
+}
+
+function updatePlayerNumber(playerId, newNum) {
+  if (!isHeadCoach()) return;
+  const p = state.players.find(x => x.id === playerId);
+  if (p) {
+    p.number = (newNum || '').trim();
+    saveState();
+    renderAll();
+  }
+}
+
+function updatePlayerName(playerId, newName) {
+  if (!isHeadCoach()) return;
+  const p = state.players.find(x => x.id === playerId);
+  if (p && newName.trim()) {
+    p.name = newName.trim();
+    saveState();
+    renderAll();
+  }
+}
+
+function removePlayer(id) {
+  if (!isHeadCoach()) return;
+  state.players = state.players.filter(p => p.id !== id);
+  recalculateSchedule();
+  renderAll();
+}
+
+function togglePositionMode() {
+  if (!canEditGame()) return;
+  state.trackPositions = !state.trackPositions;
+  saveState();
+  renderAll();
+}
+
+function toggleDrawer(id) {
+  if (!isHeadCoach()) return;
+  const el = document.getElementById(id);
+  if (!el) return;
+  const isHidden = el.classList.contains('hidden');
+  if (isHidden) {
+    el.classList.remove('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } else if (id === 'settingsDrawer' && window.scrollY > 180) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+function togglePlayerPresence(playerId) {
+  if (!canEditGame()) return;
+  const p = state.players.find(x => x.id === playerId);
+  if (p) {
+    p.present = !p.present;
+    p.rsvp = p.present ? 'going' : 'out';
+    recalculateSchedule();
+    renderAll();
+  }
+}
+
+function setAllAttendance(val) {
+  if (!canEditGame()) return;
+  state.players.forEach(p => {
+    p.present = val;
+    p.rsvp = val ? 'going' : 'out';
+  });
+  recalculateSchedule();
+  renderAll();
+}
+
+function rotateStarterOrder() {
+  if (!canEditGame()) return;
+  if (state.players.length > 1) {
+    const first = state.players.shift();
+    state.players.push(first);
+    recalculateSchedule();
+    renderAll();
+  }
+}
+
+function handleFormationChange(presetKey) {
+  if (!isHeadCoach()) return;
+  const preset = FORMATION_PRESETS[presetKey];
+  if (preset) {
+    state.formationKey = presetKey;
+    state.slots = { ...preset.slots };
+    state.lockedShifts = {};
+    recalculateSchedule();
+    renderAll();
+  }
+}
+
+function adjustSlot(zone, delta) {
+  if (!isHeadCoach()) return;
+  state.slots[zone] = Math.max(0, (state.slots[zone] || 0) + delta);
+  recalculateSchedule();
+  renderAll();
+}
+
+function handleQuarterSelectChange(val) {
+  if (!isHeadCoach()) return;
+  const customInput = document.getElementById('customQuarterMinsInput');
+  if (val === 'custom') {
+    customInput.value = state.quarterMins;
+    customInput.classList.remove('hidden');
+    customInput.focus();
+  } else {
+    customInput.classList.add('hidden');
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed) && parsed > 0) {
+      state.quarterMins = parsed;
+      resetTimer(false);
+      recalculateSchedule();
+      renderAll();
+    }
+  }
+}
+
+function handleCustomQuarterInput(val) {
+  if (!isHeadCoach()) return;
+  const parsed = parseFloat(val);
+  if (!isNaN(parsed) && parsed >= 1 && parsed <= 60) {
+    state.quarterMins = Math.round(parsed * 100) / 100;
+    resetTimer(false);
+    recalculateSchedule();
+    renderAll();
+  }
+}
+
+function handleTimingChange() {
+  if (!isHeadCoach()) return;
+  const rawMode = document.getElementById('shiftsPerQtrSelect').value;
+  const newShiftsPerQtr = rawMode === '1' ? 1 : 2;
+  const newMidQtrPosSwap = rawMode === '2_swap';
+  const oldShiftsPerQtr = state.shiftsPerQuarter;
+
+  const preservedLocks = {};
+  for (let q = 1; q <= 4; q++) {
+    const oldFirstIdx = oldShiftsPerQtr === 2 ? (q - 1) * 2 : (q - 1);
+    const newFirstIdx = newShiftsPerQtr === 2 ? (q - 1) * 2 : (q - 1);
+    const sourceShift = state.lockedShifts[oldFirstIdx] || state.computedShifts[oldFirstIdx];
+    if (sourceShift) {
+      preservedLocks[newFirstIdx] = {
+        benchIds: [...(sourceShift.benchIds || [])],
+        positions: { ...(sourceShift.positions || {}) }
+      };
+    }
+  }
+  state.lockedShifts = preservedLocks;
+
+  if (newMidQtrPosSwap) {
+    state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
+  }
+
+  state.shiftsPerQuarter = newShiftsPerQtr;
+  state.midQtrPosSwap = newMidQtrPosSwap;
+  timer.activeAlertShiftIdx = null;
+  timer.dismissedShiftIndices = [];
+  resetTimer(false);
+  recalculateSchedule();
+  renderAll();
+}
+
+function toggleFullQuarter(q) {
+  if (!canEditGame()) return;
+  state.fullQuarterLocks[q] = !state.fullQuarterLocks[q];
+  if (state.shiftsPerQuarter === 2) {
+    const firstIdx = (q - 1) * 2;
+    const firstShift = state.computedShifts[firstIdx];
+    if (firstShift && !state.lockedShifts[firstIdx]) {
+      state.lockedShifts[firstIdx] = {
+        benchIds: [...firstShift.benchIds],
+        positions: { ...firstShift.positions }
+      };
+    }
+  }
+  recalculateSchedule();
+  renderAll();
+}
+
+function adjustPrior(playerId, zone, delta) {
+  if (!isHeadCoach()) return;
+  const p = state.players.find(x => x.id === playerId);
+  if (p) {
+    p.prior[zone] = Math.max(0, Math.round(((p.prior[zone] || 0) + delta) * 100) / 100);
+    if (zone === 'BENCH') {
+      p.prior.manualBenchOverride = true;
+    }
+    recalculateSchedule();
+    renderAll();
+  }
+}
+
+function resetSeasonHistory() {
+  if (!isHeadCoach()) return;
+  state.players.forEach(p => {
+    p.prior = {
+      BENCH: 0, FWD: 0, MID: 0, DEF: 0, GK: 0,
+      gamesPlayed: 0, goals: 0, assists: 0,
+      manualBenchOverride: false
+    };
+  });
+  state.lockedShifts = {};
+  recalculateSchedule();
+  renderAll();
+}
+
+function clearAllLocks() {
+  if (!canEditGame()) return;
+  state.lockedShifts = {};
+  state.fullQuarterLocks = { 1: false, 2: false, 3: false, 4: false };
+  timer.activeAlertShiftIdx = null;
+  timer.dismissedShiftIndices = [];
+  recalculateSchedule();
+  renderAll();
+}
+
+function toggleFeedbackEmbed() {
   const container = document.getElementById('feedbackEmbedContainer');
   const iframe = document.getElementById('feedbackIframe');
   const btn = document.getElementById('toggleFeedbackEmbedBtn');
-  if (!container || !iframe) return;
 
   const isHidden = container.classList.contains('hidden');
   if (isHidden) {
@@ -2503,144 +2447,97 @@ export function toggleFeedbackEmbed() {
       iframe.setAttribute('src', iframe.getAttribute('data-src'));
     }
     container.classList.remove('hidden');
-    if (btn) btn.textContent = '✕ Hide Inline Form';
+    btn.textContent = '✕ Hide Inline Form';
   } else {
     container.classList.add('hidden');
-    if (btn) btn.textContent = '📝 Fill Out Inline';
-  }
-}
-
-export async function triggerPwaInstall() {
-  if (!deferredPwaPrompt) return;
-  deferredPwaPrompt.prompt();
-  await deferredPwaPrompt.userChoice;
-  deferredPwaPrompt = null;
-  const btn = document.getElementById('pwaInstallBtn');
-  if (btn) btn.classList.add('hidden');
-}
-
-function setupPwaInstallListeners() {
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPwaPrompt = e;
-    const btn = document.getElementById('pwaInstallBtn');
-    if (btn) {
-      btn.classList.remove('hidden');
-      btn.classList.add('flex');
-    }
-  });
-
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    btn.textContent = '📝 Fill Out Inline';
   }
 }
 
 // ============================================================================
-// BIND ALL INLINE HANDLERS TO WINDOW & BOOTSTRAP APPLICATION
+// EXPOSE HANDLERS TO GLOBAL WINDOW FOR INLINE HTML ONCLICK BINDINGS
 // ============================================================================
 Object.assign(window, {
-  // Cloud & Auth
+  triggerPwaInstall,
   openCoachAuthModal,
   closeCoachAuthModal,
   handleGoogleCoachLogin,
   handleEmailCoachAuth,
   handleCoachSignOut,
+  selectParentIdentity,
+  clearParentIdentity,
+  submitParentRsvp,
   openInviteModal,
   closeInviteModal,
   shareRoleLink,
-
-  // Engine & Timer
-  selectViewedQuarter: (q) => {
-    viewedShiftPartOverride = null;
-    selectViewedQuarter(q);
-  },
-  activateViewedQuarterClock: () => {
-    viewedShiftPartOverride = null;
-    activateViewedQuarterClock();
-  },
-  toggleTimer,
-  adjustTimer,
-  syncMidQuarter,
-  resetTimer,
-  setAlertSoundMode,
-  cycleAlertSoundMode,
-  playAlertSignal,
-  dismissActiveSubAlert,
-
-  // App UI & Controllers
-  switchMainTab,
-  toggleDrawer,
   handleTeamSelectChange,
   createNewTeamPrompt,
   deleteCurrentTeam,
+  togglePositionMode,
+  toggleDrawer,
+  switchMainTab,
   updateTeamName,
   handleFormationChange,
   handleQuarterSelectChange,
   handleCustomQuarterInput,
   handleTimingChange,
+  setAlertSoundMode,
+  cycleAlertSoundMode,
+  playAlertSignal,
   adjustSlot,
-  togglePositionMode,
+  resetSeasonHistory,
   addPlayer,
   addPlayerFromOnboarding,
   updatePlayerNumber,
   updatePlayerName,
-  updatePlayerPriorBench,
   removePlayer,
-  resetSeasonHistory,
-  selectParentIdentity,
-  clearParentIdentity,
-  submitParentRsvp,
-  toggleAttendance,
-  setAllAttendance,
-  rotateStarterOrder,
-  setRosterSort,
-  setViewedShiftPart,
-  activateQueuedSubNow,
-  toggleFullQuarterLock,
-  clearAllLocks,
-  toggleBalanceSort,
-  toggleStatsSort,
-  setSmsStyle,
-  copySingleSms,
-  copyAllSms,
+  adjustPrior,
   updateOpponentName,
-  adjustOpponentScore,
   openGoalModal,
   closeGoalModal,
   selectGoalScorer,
   selectGoalAssist,
   confirmGoalLog,
-  deleteMatchGoal,
+  removeGoal,
+  adjustOpponentScore,
+  selectViewedQuarter,
+  activateViewedQuarterClock,
+  toggleTimer,
+  adjustTimer,
+  syncMidQuarter,
+  resetTimer,
+  dismissActiveSubAlert,
+  activateQueuedAlertNow,
+  setRosterSort,
+  setAllAttendance,
+  rotateStarterOrder,
+  togglePlayerPresence,
+  toggleFullQuarter,
+  toggleBalanceSort,
+  toggleStatsSort,
   openEditModal,
   closeEditModal,
-  toggleModalPlayerBench,
-  setModalPlayerPos,
   rollRandomModalGoalie,
-  unlockCurrentModalShift,
+  toggleModalBench,
+  setModalPlayerPos,
   saveModalShift,
+  unlockCurrentModalShift,
+  setSmsStyle,
+  copySingleBubble,
+  copyAllSms,
+  clearAllLocks,
   finishAndSaveGame,
   openGameDetailModal,
   closeGameDetailModal,
   adjustHistDraftScore,
+  updateHistGoalField,
   addHistDraftGoal,
-  updateHistDraftGoal,
   removeHistDraftGoal,
-  updateHistDraftPlayerStat,
+  toggleHistPlayerPresent,
+  updateHistPlayerStat,
   saveGameDetailEdits,
   deleteCurrentModalHistoryGame,
-  toggleFeedbackEmbed,
-  triggerPwaInstall
+  toggleFeedbackEmbed
 });
 
-// Register engine hooks & start app
-registerEngineCallbacks({
-  onRenderAll: renderAll,
-  onCanEdit: canEditGame
-});
-
-loadFromLocalStorage();
-setupPwaInstallListeners();
-renderAll();
-initFirebaseConnection();
-
-
+window.addEventListener('DOMContentLoaded', loadState);
